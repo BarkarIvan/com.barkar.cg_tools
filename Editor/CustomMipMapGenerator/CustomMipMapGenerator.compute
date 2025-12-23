@@ -1,0 +1,454 @@
+#pragma kernel GenerateMip
+#pragma kernel ComputeAlphaStats
+#pragma kernel ApplyAlphaScale
+#pragma kernel SharpenMip
+#pragma kernel CopyMip
+#pragma kernel PrepareToksvigBase
+#pragma target 5.0
+
+Texture2D<float4> _SrcTex;
+Texture2D<float4> _MipTex;
+RWTexture2D<float4> _Result;
+
+RWStructuredBuffer<uint> _AlphaHist;
+RWStructuredBuffer<uint> _AlphaCoverage;
+
+int _DstWidth;
+int _DstHeight;
+int _SrcWidth;
+int _SrcHeight;
+int _PrevWidth;
+int _PrevHeight;
+float _WRatio;
+float _HRatio;
+int _UsePrev;
+int _FilterMode;
+int _AlphaMode;
+int _ChannelFilterR;
+int _ChannelFilterG;
+int _ChannelFilterB;
+int _ChannelFilterA;
+float _ChannelPower;
+int _CoverageChannel;
+float _KaiserBeta;
+float _BaseRadius;
+float _EwaSigma;
+int _EdgeAware;
+float _EdgeSigma;
+float _AlphaClip;
+int _NormalMap;
+int _GammaCorrect;
+int _ToksvigInAlpha;
+int _MipLevel;
+int _PrevMipLevel;
+int _MaxFilterRadiusMin;
+int _MaxFilterRadiusMax;
+int _MaxFilterStepSize;
+int _MaxFilterRadius;
+int _SubsampleN;
+float _AlphaScale;
+float _SharpenStrength;
+float _SharpenClamp;
+
+float3 GammaToLinear(float3 c)
+{
+    return pow(max(c, 0.0), 2.2);
+}
+
+float3 LinearToGamma(float3 c)
+{
+    return pow(max(c, 0.0), 1.0 / 2.2);
+}
+
+float4 LoadSource(int2 coord)
+{
+    coord.x = clamp(coord.x, 0, _SrcWidth - 1);
+    coord.y = clamp(coord.y, 0, _SrcHeight - 1);
+    float4 sample = _SrcTex.Load(int3(coord.x, coord.y, 0));
+    if (_UsePrev != 0)
+        sample = _MipTex.Load(int3(coord.x, coord.y, _PrevMipLevel));
+    return sample;
+}
+
+float4 LoadPrev(int2 coord)
+{
+    coord.x = clamp(coord.x, 0, _PrevWidth - 1);
+    coord.y = clamp(coord.y, 0, _PrevHeight - 1);
+    return _MipTex.Load(int3(coord.x, coord.y, _PrevMipLevel));
+}
+
+float Luma(float3 c)
+{
+    return dot(c, float3(0.2126, 0.7152, 0.0722));
+}
+
+float BesselI0(float x)
+{
+    float ax = abs(x);
+    if (ax < 3.75)
+    {
+        float y = x / 3.75;
+        y = y * y;
+        return 1.0 + y * (3.5156229 + y * (3.0899424 + y * (1.2067492 + y * (0.2659732 + y * (0.0360768 + y * 0.0045813)))));
+    }
+    float y = 3.75 / ax;
+    float t = 0.00392377;
+    t = t * y + (-0.01647633);
+    t = t * y + (0.02635537);
+    t = t * y + (-0.02057706);
+    t = t * y + (0.00916281);
+    t = t * y + (-0.00157565);
+    t = t * y + (0.00225319);
+    t = t * y + (0.01328592);
+    t = t * y + 0.39894228;
+    return (exp(ax) / sqrt(ax)) * t;
+}
+
+float KaiserWindow(float x, float radius, float beta)
+{
+    float ratio = x / radius;
+    if (abs(ratio) > 1.0)
+        return 0.0;
+    float t = beta * sqrt(1.0 - ratio * ratio);
+    return BesselI0(t) / BesselI0(beta);
+}
+
+float KaiserWeight(float d, float radius, float beta)
+{
+    if (d > radius)
+        return 0.0;
+    float sinc = d != 0.0 ? sin(3.14159265 * d) / (3.14159265 * d) : 1.0;
+    return sinc * KaiserWindow(d, radius, beta);
+}
+
+float GetChannelValue(float4 c, int channel)
+{
+    if (channel == 0)
+        return c.r;
+    if (channel == 1)
+        return c.g;
+    if (channel == 2)
+        return c.b;
+    return c.a;
+}
+
+float4 SetChannelValue(float4 c, int channel, float value)
+{
+    if (channel == 0)
+        c.r = value;
+    else if (channel == 1)
+        c.g = value;
+    else if (channel == 2)
+        c.b = value;
+    else
+        c.a = value;
+    return c;
+}
+
+float SelectFilteredValue(int mode, float avg, float minV, float maxV, float sqAvg, float invSqAvg, float powAvg, float invPower)
+{
+    if (mode == 1)
+        return minV;
+    if (mode == 2)
+        return maxV;
+    if (mode == 3)
+        return sqrt(max(sqAvg, 0.0));
+    if (mode == 4)
+        return 1.0 - sqrt(max(invSqAvg, 0.0));
+    if (mode == 5)
+        return pow(max(powAvg, 0.0), invPower);
+    return avg;
+}
+
+[numthreads(8, 8, 1)]
+void PrepareToksvigBase(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_DstWidth || id.y >= (uint)_DstHeight)
+        return;
+
+    float4 sample = _SrcTex.Load(int3(id.x, id.y, 0));
+    float3 s = sample.rgb * 2.0 - 1.0;
+    float len = max(length(s), 1e-6);
+    float tok = saturate(len);
+    float3 n = s / len;
+    float3 n01 = n * 0.5 + 0.5;
+    float alpha = (_ToksvigInAlpha != 0) ? tok : sample.a;
+    _Result[int2(id.xy)] = float4(n01, alpha);
+}
+
+[numthreads(8, 8, 1)]
+void GenerateMip(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_DstWidth || id.y >= (uint)_DstHeight)
+        return;
+
+    float centerX = (id.x + 0.5) * _WRatio - 0.5;
+    float centerY = (id.y + 0.5) * _HRatio - 0.5;
+    int2 center = int2(clamp((int)floor(centerX + 0.5), 0, _SrcWidth - 1), clamp((int)floor(centerY + 0.5), 0, _SrcHeight - 1));
+
+    float localRadius = _BaseRadius;
+    float localBeta = _KaiserBeta;
+
+    float ewaSigma = max(_EwaSigma, 1e-3);
+    float ewaRadius = ewaSigma * 3.0;
+    float activeRadius = (_FilterMode == 0) ? localRadius : ewaRadius;
+    float edgeSigma = max(_EdgeSigma, 1e-3);
+
+    float maxRatio = max(_WRatio, _HRatio);
+    int kernelRadius = (int)ceil(activeRadius * maxRatio);
+
+    float3 accumRgb = 0.0;
+    float3 accumNormal = 0.0;
+    float accumA = 0.0;
+    float totalWeight = 0.0;
+    float centerLuma = 0.0;
+    int useMinMax = (_NormalMap == 0 && (_ChannelFilterR == 1 || _ChannelFilterR == 2
+        || _ChannelFilterG == 1 || _ChannelFilterG == 2
+        || _ChannelFilterB == 1 || _ChannelFilterB == 2
+        || _ChannelFilterA == 1 || _ChannelFilterA == 2)) ? 1 : 0;
+    int useSq = (_NormalMap == 0 && (_ChannelFilterR == 3 || _ChannelFilterG == 3 || _ChannelFilterB == 3 || _ChannelFilterA == 3)) ? 1 : 0;
+    int useInvSq = (_NormalMap == 0 && (_ChannelFilterR == 4 || _ChannelFilterG == 4 || _ChannelFilterB == 4 || _ChannelFilterA == 4)) ? 1 : 0;
+    int usePow = (_NormalMap == 0 && (_ChannelFilterR == 5 || _ChannelFilterG == 5 || _ChannelFilterB == 5 || _ChannelFilterA == 5)) ? 1 : 0;
+    float power = max(_ChannelPower, 1e-3);
+    float invPower = 1.0 / power;
+    float4 minVal = float4(1e20, 1e20, 1e20, 1e20);
+    float4 maxVal = float4(-1e20, -1e20, -1e20, -1e20);
+    float4 accumSq = 0.0;
+    float4 accumInvSq = 0.0;
+    float4 accumPow = 0.0;
+
+    if (_EdgeAware != 0)
+    {
+        float4 centerSample = LoadSource(center);
+        if (_GammaCorrect != 0)
+            centerSample.rgb = GammaToLinear(centerSample.rgb);
+        centerLuma = Luma(centerSample.rgb);
+    }
+
+    for (int ky = -kernelRadius; ky <= kernelRadius; ky++)
+    {
+        int sampleY = clamp((int)floor(centerY) + ky, 0, _SrcHeight - 1);
+        float y = ky / _HRatio;
+        for (int kx = -kernelRadius; kx <= kernelRadius; kx++)
+        {
+            int sampleX = clamp((int)floor(centerX) + kx, 0, _SrcWidth - 1);
+            float x = kx / _WRatio;
+            float weight = 0.0;
+            if (_FilterMode == 0)
+            {
+                float d = sqrt(x * x + y * y);
+                if (d > localRadius)
+                    continue;
+                weight = KaiserWeight(d, localRadius, localBeta);
+            }
+            else
+            {
+                if (abs(x) > ewaRadius || abs(y) > ewaRadius)
+                    continue;
+                float dx = x / ewaSigma;
+                float dy = y / ewaSigma;
+                weight = exp(-0.5 * (dx * dx + dy * dy));
+            }
+
+            float4 sample = LoadSource(int2(sampleX, sampleY));
+            if (_GammaCorrect != 0)
+                sample.rgb = GammaToLinear(sample.rgb);
+
+            if (_EdgeAware != 0)
+            {
+                float dl = Luma(sample.rgb) - centerLuma;
+                float edgeWeight = exp(-(dl * dl) / (2.0 * edgeSigma * edgeSigma));
+                weight *= edgeWeight;
+            }
+
+            if (_NormalMap != 0)
+            {
+                float3 n = sample.rgb * 2.0 - 1.0;
+                if (_ToksvigInAlpha != 0 && _UsePrev != 0)
+                    n *= sample.a;
+                accumNormal += n * weight;
+            }
+            else
+            {
+                accumRgb += sample.rgb * weight;
+                if (useMinMax != 0)
+                {
+                    minVal = min(minVal, sample);
+                    maxVal = max(maxVal, sample);
+                }
+                if (useSq != 0)
+                    accumSq += sample * sample * weight;
+                if (useInvSq != 0)
+                {
+                    float4 inv = 1.0 - sample;
+                    accumInvSq += inv * inv * weight;
+                }
+                if (usePow != 0)
+                    accumPow += pow(max(sample, 0.0), power) * weight;
+            }
+            if (_AlphaMode == 0)
+                accumA += sample.a * weight;
+            totalWeight += weight;
+        }
+    }
+
+    if (abs(totalWeight) > 1e-5)
+    {
+        if (_NormalMap != 0)
+            accumNormal /= totalWeight;
+        else
+            accumRgb /= totalWeight;
+        if (_AlphaMode == 0)
+            accumA /= totalWeight;
+        if (useSq != 0)
+            accumSq /= totalWeight;
+        if (useInvSq != 0)
+            accumInvSq /= totalWeight;
+        if (usePow != 0)
+            accumPow /= totalWeight;
+    }
+
+    float4 result = float4(0.0, 0.0, 0.0, accumA);
+    if (_NormalMap == 0)
+    {
+        float4 avg = float4(accumRgb, accumA);
+        float4 outVal = avg;
+        if (useMinMax != 0 || useSq != 0 || useInvSq != 0 || usePow != 0)
+        {
+            outVal.r = SelectFilteredValue(_ChannelFilterR, avg.r, minVal.r, maxVal.r, accumSq.r, accumInvSq.r, accumPow.r, invPower);
+            outVal.g = SelectFilteredValue(_ChannelFilterG, avg.g, minVal.g, maxVal.g, accumSq.g, accumInvSq.g, accumPow.g, invPower);
+            outVal.b = SelectFilteredValue(_ChannelFilterB, avg.b, minVal.b, maxVal.b, accumSq.b, accumInvSq.b, accumPow.b, invPower);
+            outVal.a = SelectFilteredValue(_ChannelFilterA, avg.a, minVal.a, maxVal.a, accumSq.a, accumInvSq.a, accumPow.a, invPower);
+        }
+        result = outVal;
+    }
+
+    if (_AlphaMode == 1)
+    {
+        int2 p = int2(id.x * 2, id.y * 2);
+        float a00 = LoadPrev(p).a;
+        float a10 = LoadPrev(p + int2(1, 0)).a;
+        float a01 = LoadPrev(p + int2(0, 1)).a;
+        float a11 = LoadPrev(p + int2(1, 1)).a;
+        result.a = (a00 + a10 + a01 + a11) * 0.25;
+    }
+    else if (_AlphaMode == 2)
+    {
+        int radius = _MaxFilterRadius;
+        float maxAlpha = 0.0;
+        int2 p = int2(id.x * 2, id.y * 2);
+        for (int dy = -radius; dy <= radius; dy++)
+        {
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                float a = LoadPrev(p + int2(dx, dy)).a;
+                maxAlpha = max(maxAlpha, a);
+            }
+        }
+        result.a = maxAlpha;
+    }
+
+    if (_NormalMap != 0)
+    {
+        float3 s = accumNormal;
+        float len = max(length(s), 1e-6);
+        float tok = saturate(len);
+        float3 n = s / len;
+        result.rgb = n * 0.5 + 0.5;
+        if (_ToksvigInAlpha != 0 && _AlphaMode == 0)
+            result.a = tok;
+    }
+
+    if (_GammaCorrect != 0)
+        result.rgb = LinearToGamma(result.rgb);
+
+    _Result[int2(id.xy)] = result;
+}
+
+[numthreads(8, 8, 1)]
+void SharpenMip(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_DstWidth || id.y >= (uint)_DstHeight)
+        return;
+
+    int2 p = int2(id.xy);
+    int2 left = int2(max(p.x - 1, 0), p.y);
+    int2 right = int2(min(p.x + 1, _DstWidth - 1), p.y);
+    int2 down = int2(p.x, max(p.y - 1, 0));
+    int2 up = int2(p.x, min(p.y + 1, _DstHeight - 1));
+
+    float4 c = _MipTex.Load(int3(p.x, p.y, _MipLevel));
+    float4 l = _MipTex.Load(int3(left.x, left.y, _MipLevel));
+    float4 r = _MipTex.Load(int3(right.x, right.y, _MipLevel));
+    float4 d = _MipTex.Load(int3(down.x, down.y, _MipLevel));
+    float4 u = _MipTex.Load(int3(up.x, up.y, _MipLevel));
+
+    float3 blur = (l.rgb + r.rgb + d.rgb + u.rgb) * 0.25;
+    float3 sharp = c.rgb + _SharpenStrength * (c.rgb - blur);
+
+    float3 minC = min(min(l.rgb, r.rgb), min(d.rgb, u.rgb));
+    float3 maxC = max(max(l.rgb, r.rgb), max(d.rgb, u.rgb));
+    sharp = clamp(sharp, minC - _SharpenClamp, maxC + _SharpenClamp);
+
+    _Result[int2(id.xy)] = float4(sharp, c.a);
+}
+
+[numthreads(8, 8, 1)]
+void CopyMip(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_DstWidth || id.y >= (uint)_DstHeight)
+        return;
+
+    float4 c = _MipTex.Load(int3(id.x, id.y, _MipLevel));
+    _Result[int2(id.xy)] = c;
+}
+
+[numthreads(8, 8, 1)]
+void ComputeAlphaStats(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_DstWidth || id.y >= (uint)_DstHeight)
+        return;
+
+    float4 c0 = _MipTex.Load(int3(id.x, id.y, _MipLevel));
+    float alpha = saturate(GetChannelValue(c0, _CoverageChannel));
+    uint bin = min(255, (uint)floor(alpha * 255.0 + 0.5));
+    InterlockedAdd(_AlphaHist[bin], 1);
+
+    if (id.x >= (uint)(_DstWidth - 1) || id.y >= (uint)(_DstHeight - 1))
+        return;
+
+    float a00 = saturate(alpha);
+    float a10 = saturate(GetChannelValue(_MipTex.Load(int3(id.x + 1, id.y, _MipLevel)), _CoverageChannel));
+    float a01 = saturate(GetChannelValue(_MipTex.Load(int3(id.x, id.y + 1, _MipLevel)), _CoverageChannel));
+    float a11 = saturate(GetChannelValue(_MipTex.Load(int3(id.x + 1, id.y + 1, _MipLevel)), _CoverageChannel));
+
+    uint covered = 0;
+    for (int sy = 0; sy < _SubsampleN; sy++)
+    {
+        float fy = (sy + 0.5) / _SubsampleN;
+        for (int sx = 0; sx < _SubsampleN; sx++)
+        {
+            float fx = (sx + 0.5) / _SubsampleN;
+            float a = a00 * (1.0 - fx) * (1.0 - fy)
+                    + a10 * fx * (1.0 - fy)
+                    + a01 * (1.0 - fx) * fy
+                    + a11 * fx * fy;
+            if (a > _AlphaClip)
+                covered++;
+        }
+    }
+
+    InterlockedAdd(_AlphaCoverage[0], covered);
+}
+
+[numthreads(8, 8, 1)]
+void ApplyAlphaScale(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_DstWidth || id.y >= (uint)_DstHeight)
+        return;
+
+    float4 c = _MipTex.Load(int3(id.x, id.y, _MipLevel));
+    float v = saturate(GetChannelValue(c, _CoverageChannel) * _AlphaScale);
+    c = SetChannelValue(c, _CoverageChannel, v);
+    _Result[int2(id.xy)] = c;
+}

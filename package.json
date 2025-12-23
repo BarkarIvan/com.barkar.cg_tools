@@ -1,0 +1,15 @@
+{
+  "name": "com.barkar.cg_tools",
+  "version": "1.0.0",
+  "displayName": "Barkar CG tools",
+  "description": "CG Tools",
+  "unity": "6000.3",
+  "dependencies": {
+    "com.unity.render-pipelines.universal": "17.3.0"
+  },
+  "author": {
+    "name": "Barkar Ivan",
+    "email": "lemongrass@yandex.ru",
+    "url": "https://www.unity3d.com"
+  }
+}

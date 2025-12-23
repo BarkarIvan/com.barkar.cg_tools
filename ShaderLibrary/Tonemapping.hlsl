@@ -1,0 +1,77 @@
+#ifndef CUSTOM_TONEMAPPING
+#define CUSTOM_TONEMAPPING
+  half3 ACESFilmTonemapping(half3 col)
+            {
+                half a = 2.51;
+                half b = 0.03;
+                half c = 2.43;
+                half d = 0.59;
+                half e = 0.14;
+                return saturate((col * (a * col + b)) / (col * (c * col + d) + e));
+            }
+
+            //GT TONEMAP
+
+            static const float e = 2.71828;
+
+            float W_f(float x, float e0, float e1)
+            {
+                if (x <= e0)
+                    return 0;
+                if (x >= e1)
+                    return 1;
+                float a = (x - e0) / (e1 - e0);
+                return a * a * (3 - 2 * a);
+            }
+
+            float H_f(float x, float e0, float e1)
+            {
+                if (x <= e0)
+                    return 0;
+                if (x >= e1)
+                    return 1;
+                return (x - e0) / (e1 - e0);
+            }
+
+            float GTTonemap(float x)
+            {
+                float m = 0.22; // linear section start
+                float a = 1.0; // contrast
+                float c = 1.33; // black brightness
+                float P = 1.0; // maximum brightness
+                float l = 0.4; // linear section length
+                float l0 = ((P - m) * l) / a; // 0.312
+                float S0 = m + l0; // 0.532
+                float S1 = m + a * l0; // 0.532
+                float C2 = (a * P) / (P - S1); // 2.13675213675
+                float L = m + a * (x - m);
+                float T = m * pow(x / m, c);
+                float S = P - (P - S1) * exp(-C2 * (x - S0) / P);
+                float w0 = 1 - smoothstep(0.0, m, x);
+                float w2 = (x < m + l) ? 0 : 1;
+                float w1 = 1 - w0 - w2;
+                return float(T * w0 + L * w1 + S * w2);
+            }
+
+            // PBR Neutral
+            half3 PBRNeutralToneMapping(half3 color)
+            {
+                const half startCompression = 0.8 - 0.04;
+                const half desaturation = 0.15;
+
+                half x = min(color.r, min(color.g, color.b));
+                half offset = x < 0.08 ? x - 6.25 * x * x : 0.04;
+                color -= offset;
+
+                half peak = max(color.r, max(color.g, color.b));
+                if (peak < startCompression) return color;
+
+                const half d = 1. - startCompression;
+                half newPeak = 1. - d * d / (peak + d - startCompression);
+                color *= newPeak / peak;
+
+                half g = 1. - 1. / (desaturation * (peak - newPeak) + 1.);
+                return lerp(color, newPeak * half3(1, 1, 1), g);
+            }
+
+#endif
