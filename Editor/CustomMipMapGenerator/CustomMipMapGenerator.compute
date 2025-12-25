@@ -8,6 +8,7 @@
 
 Texture2D<float4> _SrcTex;
 Texture2D<float4> _MipTex;
+Texture2D<float4> _PrevTex;
 RWTexture2D<float4> _Result;
 
 RWStructuredBuffer<uint> _AlphaHist;
@@ -40,7 +41,6 @@ int _NormalMap;
 int _GammaCorrect;
 int _ToksvigInAlpha;
 int _MipLevel;
-int _PrevMipLevel;
 int _MaxFilterRadiusMin;
 int _MaxFilterRadiusMax;
 int _MaxFilterStepSize;
@@ -62,19 +62,22 @@ float3 LinearToGamma(float3 c)
 
 float4 LoadSource(int2 coord)
 {
+    if (_UsePrev != 0)
+    {
+        coord.x = clamp(coord.x, 0, _PrevWidth - 1);
+        coord.y = clamp(coord.y, 0, _PrevHeight - 1);
+        return _PrevTex.Load(int3(coord.x, coord.y, 0));
+    }
     coord.x = clamp(coord.x, 0, _SrcWidth - 1);
     coord.y = clamp(coord.y, 0, _SrcHeight - 1);
-    float4 sample = _SrcTex.Load(int3(coord.x, coord.y, 0));
-    if (_UsePrev != 0)
-        sample = _MipTex.Load(int3(coord.x, coord.y, _PrevMipLevel));
-    return sample;
+    return _SrcTex.Load(int3(coord.x, coord.y, 0));
 }
 
 float4 LoadPrev(int2 coord)
 {
     coord.x = clamp(coord.x, 0, _PrevWidth - 1);
     coord.y = clamp(coord.y, 0, _PrevHeight - 1);
-    return _MipTex.Load(int3(coord.x, coord.y, _PrevMipLevel));
+    return _PrevTex.Load(int3(coord.x, coord.y, 0));
 }
 
 float Luma(float3 c)
