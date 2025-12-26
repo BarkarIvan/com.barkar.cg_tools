@@ -23,6 +23,8 @@ Shader "Barkar/ARMLit"
 
         [Toggle(_USEALPHACLIP)] _UseAlphaClip ("Use Alpha Clip", Float) = 0
         _Cutoff ("ClipAlha", Range(0,1)) = 0
+        _OffsetFactor ("Offset Factor", Range(-1,1)) = 0
+        _OffsetUnits ("Offset Units", Range(-1,1)) = 0
 
 
         [Space(40)]
@@ -50,6 +52,7 @@ Shader "Barkar/ARMLit"
             Cull [_Cull]
             Blend [_Blend1] [_Blend2]
             ZWrite [_ZWrite]
+            Offset [_OffsetFactor], [_OffsetUnits]
 
 
             HLSLPROGRAM
@@ -150,7 +153,6 @@ Shader "Barkar/ARMLit"
                 OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
                 OUT.color = IN.color;
                 OUT.screenPos = positionInputs.positionNDC;
-
                 OUTPUT_LIGHTMAP_UV(IN.lightmapUV, unity_LightmapST, OUT.lightmapUV);
                 OUTPUT_SH(OUT.normalWS, OUT.SH); //vertex SH
 

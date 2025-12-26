@@ -24,6 +24,8 @@ public class BarkarARMLitShaderEditor : BaseShaderGUI
     private MaterialProperty _Blend1;
     private MaterialProperty _Blend2;
     private MaterialProperty _ZWrite;
+    private MaterialProperty _OffsetFactor;
+    private MaterialProperty _OffsetUnits;
 
     // Enum declarations
     public enum CullEnum
@@ -121,6 +123,8 @@ public class BarkarARMLitShaderEditor : BaseShaderGUI
             }
             
             _Cull.floatValue = (float)(CullEnum)EditorGUILayout.EnumPopup("Cull", (CullEnum)_Cull.floatValue);
+            materialEditor.ShaderProperty(_OffsetFactor, "Offset Factor");
+            materialEditor.ShaderProperty(_OffsetUnits, "Offset Units");
             EditorGUILayout.Space();
             _blendMode = (BlendModes)EditorGUILayout.EnumPopup("Blend Mode", _blendMode);
             // 
@@ -174,6 +178,8 @@ public class BarkarARMLitShaderEditor : BaseShaderGUI
         return BlendModes.Opaque;
     }
     
+   
+    
     /// <summary>
     /// Sets the keyword of a material.
     /// </summary>
@@ -215,6 +221,8 @@ public class BarkarARMLitShaderEditor : BaseShaderGUI
         _Blend1 = FindProperty("_Blend1");
         _Blend2 = FindProperty("_Blend2");
         _ZWrite = FindProperty("_ZWrite");
+        _OffsetFactor = FindProperty("_OffsetFactor");
+        _OffsetUnits = FindProperty("_OffsetUnits");
         _blendMode = _blendMode = GetBlendModeFromMaterialProperties();
     }
 
