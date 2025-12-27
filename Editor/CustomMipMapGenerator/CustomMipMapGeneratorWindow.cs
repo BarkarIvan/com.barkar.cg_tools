@@ -23,6 +23,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private static readonly GUIContent EdgeSigmaLabel = new GUIContent("Edge Sigma", "Edge sensitivity. Lower values preserve edges more aggressively.");
     private static readonly GUIContent EwaSigmaLabel = new GUIContent("EWA Sigma", "Elliptical Gaussian radius in texels. Higher = smoother.");
     private static readonly GUIContent FullResMipsLabel = new GUIContent("Full-Res Mips", "Number of mip levels generated from full-res source before switching to previous-mip source.");
+    private static readonly GUIContent MaxFullResRatioLabel = new GUIContent("Max Full-Res Ratio", "0 = no cap. Switches to previous mip if source/dest ratio exceeds this value.");
     private static readonly GUIContent TextureTypeLabel = new GUIContent("Texture Type", "Color = sRGB color. Normal Map = normal renormalization + Toksvig. Packed/Data = linear masks/roughness/AO/height.");
     private static readonly GUIContent ToksvigLabel = new GUIContent("Toksvig In Alpha", "Store normal length in alpha for Toksvig roughness. Requires shader support.");
     private static readonly GUIContent SharpenLabel = new GUIContent("Sharpen", "Apply unsharp filter to the first N mips.");
@@ -167,6 +168,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         int maxFullResMipCount = GetMaxFullResMipCount();
         settings.fullResMipCount = Mathf.Clamp(settings.fullResMipCount, 0, maxFullResMipCount);
         settings.fullResMipCount = EditorGUILayout.IntSlider(FullResMipsLabel, settings.fullResMipCount, 0, maxFullResMipCount);
+        settings.maxFullResRatio = EditorGUILayout.IntSlider(MaxFullResRatioLabel, settings.maxFullResRatio, 0, 64);
         settings.sharpenEnabled = EditorGUILayout.Toggle(SharpenLabel, settings.sharpenEnabled);
         if (settings.sharpenEnabled)
         {
@@ -195,8 +197,6 @@ public class CustomMipMapGeneratorWindow : EditorWindow
                 settings.maxFilterStepSize = EditorGUILayout.IntSlider(MaxFilterStepLabel, settings.maxFilterStepSize, 1, 4);
             }
         }
-        if (!isDataMap)
-            EditorGUILayout.HelpBox("Per-channel filters are available for Packed/Data maps.", MessageType.Info);
         EditorGUI.BeginDisabledGroup(!isDataMap);
         settings.usePerChannelFilter = EditorGUILayout.Toggle(PerChannelFilterLabel, settings.usePerChannelFilter);
         EditorGUI.EndDisabledGroup();

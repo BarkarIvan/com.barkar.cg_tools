@@ -35,6 +35,7 @@ namespace CustomMipMapGenerator
         public TextureFormat compressionMobile = TextureFormat.ASTC_6x6;
         public TextureFormat compressionPc = TextureFormat.BC7;
         public TextureFormat compressionLinux = TextureFormat.BC7;
+        public int maxFullResRatio = 16;
         public float kaiserBeta = 6f;
         public float baseRadius = 3f;
         public bool usePerChannelFilter;

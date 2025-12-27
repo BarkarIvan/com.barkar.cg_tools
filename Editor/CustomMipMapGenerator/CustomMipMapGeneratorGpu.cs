@@ -131,6 +131,7 @@ public static class CustomMipMapGeneratorGpu
             SetStaticShaderParams(shader, settings, isNormalMap, shouldGammaCorrect, effectiveAlphaMode,
                 channelFilterRValue, channelFilterGValue, channelFilterBValue, channelFilterAValue);
 
+            bool warnedFullResRatio = false;
             for (int mip = 1; mip < mipCount; mip++)
             {
                 EditorUtility.DisplayProgressBar("Generating MipMaps", $"Mip Level {mip}/{mipCount - 1}", (float)mip / (mipCount - 1));
@@ -144,6 +145,23 @@ public static class CustomMipMapGeneratorGpu
                 int srcHeight = usePrev ? prevHeight : height;
                 float wratio = (float)srcWidth / mipWidth;
                 float hratio = (float)srcHeight / mipHeight;
+                if (!usePrev && settings.maxFullResRatio > 0)
+                {
+                    float maxRatio = Mathf.Max(wratio, hratio);
+                    if (maxRatio > settings.maxFullResRatio)
+                    {
+                        usePrev = true;
+                        srcWidth = prevWidth;
+                        srcHeight = prevHeight;
+                        wratio = (float)srcWidth / mipWidth;
+                        hratio = (float)srcHeight / mipHeight;
+                        if (!warnedFullResRatio)
+                        {
+                            Debug.LogWarning($"Full-res ratio {maxRatio:0.##} exceeds cap {settings.maxFullResRatio}. Switching to previous mip.");
+                            warnedFullResRatio = true;
+                        }
+                    }
+                }
                 int maxFilterRadius = Mathf.Clamp(settings.maxFilterRadiusMin + mip / Mathf.Max(1, settings.maxFilterStepSize),
                     settings.maxFilterRadiusMin, settings.maxFilterRadiusMax);
 
