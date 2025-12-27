@@ -103,7 +103,7 @@
       <h1>Custom MipMap Generator</h1>
       <p>
         GPU-only mip generation for Unity textures with custom filtering,
-        Toksvig support for normals, and build-time platform variants.
+        Toksvig support for normals, and single-file or variant outputs.
       </p>
     </header>
     <main>
@@ -136,10 +136,11 @@
           <li>Assign the source texture.</li>
           <li>Select Texture Type (Color, Normal Map, Data Map).</li>
           <li>Adjust filter and sharpening settings.</li>
-          <li>Click Generate Standalone Variant (.standalone) to create <code>*_customMips.standalone.asset</code>.</li>
-          <li>Optional: Generate Both Variants for mobile and standalone.</li>
+          <li>Select Output Mode (Single File or Variants).</li>
+          <li>Single File: Generate Custom Mip File (.cmips).</li>
+          <li>Variants: Generate Standalone or Both Variants.</li>
         </ol>
-        <p class="note">Materials can reference any variant; build swap normalizes all variants to the target platform.</p>
+        <p class="note">Single file uses the importer to compress per build target. Variant assets use build swap.</p>
       </section>
 
       <section>
@@ -189,6 +190,15 @@
       </section>
 
       <section>
+        <h2>Sampling Settings</h2>
+        <ul>
+          <li>Wrap U/V, Sampler Filter, Aniso Level, and Mip Bias are applied to the output texture.</li>
+          <li>For <code>.cmips</code>, these settings are stored on the importer and can be adjusted later.</li>
+          <li>For variant assets, settings are baked into the asset at generation time.</li>
+        </ul>
+      </section>
+
+      <section>
         <h2>Full-Res Mips and Max Full-Res Ratio</h2>
         <ul>
           <li><code>Full-Res Mips</code> controls how many early mips sample the full source.</li>
@@ -198,11 +208,34 @@
       </section>
 
       <section>
-        <h2>Platform Variants</h2>
-        <p>Generate platform-specific copies without runtime code.</p>
+        <h2>Single File (.cmips)</h2>
+        <p>One file in <code>Assets</code> that contains the full mip chain.</p>
         <ul>
-          <li>Standalone: <code>*_customMips.standalone.asset</code></li>
-          <li>Mobile: <code>*_customMips.mobile.asset</code></li>
+          <li>Importer compresses per active build target (mobile/standalone).</li>
+          <li>No build swap needed.</li>
+          <li>Compression settings are stored on the importer and can be adjusted later.</li>
+        </ul>
+        <p class="note">Switch build target to force reimport with the other compression format.</p>
+      </section>
+
+      <section>
+        <h2>Auto-Generate from PNG (Profiles)</h2>
+        <p>Create a Profile Set asset and the importer will generate <code>.cmips</code> automatically from matching PNG files.</p>
+        <ol>
+          <li>Create a profile set: Tools - Custom MipMap Generator - Create Profile Set.</li>
+          <li>Assign suffix rules (e.g. <code>_BaseColor</code>, <code>_Normal</code>, <code>_ARM</code>).</li>
+          <li>Import PNG files with those suffixes to auto-generate <code>*.cmips</code>.</li>
+        </ol>
+        <p class="note">Generation settings live on the Profile Set. Compression and sampling live on the <code>.cmips</code> importer.</p>
+        <p class="note">Use Tools - Custom MipMap Generator - Regenerate CMips From Profiles after changing profile settings.</p>
+      </section>
+
+      <section>
+        <h2>Platform Variants</h2>
+        <p>Legacy workflow that stores separate assets per platform.</p>
+        <ul>
+          <li>Standalone: <code>*.standalone.asset</code></li>
+          <li>Mobile: <code>*.mobile.asset</code></li>
         </ul>
         <h3>Build Swap</h3>
         <ul>
@@ -234,7 +267,7 @@
         <h3>ASTC Looks Black in Editor</h3>
         <ul>
           <li>Desktop GPUs often do not support ASTC decoding.</li>
-          <li>Preview the base or PC variant in editor; ASTC is for mobile builds.</li>
+          <li>Switch build target to Standalone to preview BC formats.</li>
         </ul>
         <h3>Material Lost Reference</h3>
         <ul>

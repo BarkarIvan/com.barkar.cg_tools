@@ -32,8 +32,13 @@ public static class CustomMipMapGeneratorGpu
         GenerateInternal(sourceTexture, settings, shader, compressionOverride, outputSuffix);
     }
 
+    public static void GenerateCustomMipFile(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader)
+    {
+        GenerateInternal(sourceTexture, settings, shader, TextureFormat.RGBA32, null, true);
+    }
+
     private static void GenerateInternal(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader,
-        TextureFormat compressionOverride, string outputSuffix)
+        TextureFormat compressionOverride, string outputSuffix, bool writeCustomFile = false)
     {
         if (!SystemInfo.supportsComputeShaders)
         {
@@ -61,6 +66,7 @@ public static class CustomMipMapGeneratorGpu
             return;
         }
 
+        var importerState = CaptureImporterState(importer);
         ConfigureImporter(importer);
         AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceUpdate);
         sourceTexture = AssetDatabase.LoadAssetAtPath<Texture2D>(path);
@@ -197,6 +203,27 @@ public static class CustomMipMapGeneratorGpu
                 return;
 
             mipTexture.Apply(false, false);
+
+            if (writeCustomFile)
+            {
+                var outputPath = BuildCustomMipFilePath(path);
+                if (!CustomMipMapGeneratorMipFile.TryWrite(outputPath, mipTexture, settings.textureKind, out var error))
+                {
+                    Debug.LogError($"Failed to write custom mip file: {error}");
+                }
+                else
+                {
+                    AssetDatabase.ImportAsset(outputPath, ImportAssetOptions.ForceUpdate);
+                    ConfigureCustomMipImporter(outputPath, settings);
+                    Debug.Log("MipMaps generated: " + outputPath);
+                }
+
+                RestoreImporter(importer, importerState);
+                Object.DestroyImmediate(mipTexture);
+                return;
+            }
+
+            ApplySamplingSettings(mipTexture, settings);
             if (!SystemInfo.SupportsTextureFormat(compressionOverride))
             {
                 Debug.LogWarning($"Compression format {compressionOverride} is not supported on this platform. Preview may be black.");
@@ -207,7 +234,7 @@ public static class CustomMipMapGeneratorGpu
             var newPath = BuildOutputPath(path, resolvedSuffix);
             SaveOrUpdateAsset(mipTexture, newPath);
 
-            RestoreImporter(importer, isNormalMap, isDataMap);
+            RestoreImporter(importer, importerState);
 
             Debug.Log("MipMaps generated: " + newPath);
         }
@@ -242,11 +269,37 @@ public static class CustomMipMapGeneratorGpu
         importer.SaveAndReimport();
     }
 
-    private static void RestoreImporter(TextureImporter importer, bool isNormalMap, bool isDataMap)
+    private struct ImporterState
     {
-        importer.isReadable = false;
-        importer.sRGBTexture = !isNormalMap && !isDataMap;
-        importer.mipmapEnabled = true;
+        public bool isReadable;
+        public TextureImporterCompression compression;
+        public bool mipmapEnabled;
+        public bool sRGBTexture;
+        public TextureImporterAlphaSource alphaSource;
+        public bool alphaIsTransparency;
+    }
+
+    private static ImporterState CaptureImporterState(TextureImporter importer)
+    {
+        return new ImporterState
+        {
+            isReadable = importer.isReadable,
+            compression = importer.textureCompression,
+            mipmapEnabled = importer.mipmapEnabled,
+            sRGBTexture = importer.sRGBTexture,
+            alphaSource = importer.alphaSource,
+            alphaIsTransparency = importer.alphaIsTransparency
+        };
+    }
+
+    private static void RestoreImporter(TextureImporter importer, ImporterState state)
+    {
+        importer.isReadable = state.isReadable;
+        importer.textureCompression = state.compression;
+        importer.mipmapEnabled = state.mipmapEnabled;
+        importer.sRGBTexture = state.sRGBTexture;
+        importer.alphaSource = state.alphaSource;
+        importer.alphaIsTransparency = state.alphaIsTransparency;
         importer.SaveAndReimport();
     }
 
@@ -256,7 +309,44 @@ public static class CustomMipMapGeneratorGpu
         var baseName = Path.GetFileNameWithoutExtension(sourcePath);
         var normalizedSuffix = string.IsNullOrEmpty(suffix) ? string.Empty : (suffix.StartsWith(".") ? suffix : "." + suffix);
         var safeDir = string.IsNullOrEmpty(dir) ? "Assets" : dir.Replace('\\', '/');
-        return safeDir + "/" + baseName + "_customMips" + normalizedSuffix + ".asset";
+        return safeDir + "/" + baseName + normalizedSuffix + ".asset";
+    }
+
+    private static string BuildCustomMipFilePath(string sourcePath)
+    {
+        var dir = Path.GetDirectoryName(sourcePath);
+        var baseName = Path.GetFileNameWithoutExtension(sourcePath);
+        var safeDir = string.IsNullOrEmpty(dir) ? "Assets" : dir.Replace('\\', '/');
+        return safeDir + "/" + baseName + CustomMipMapGeneratorMipFile.Extension;
+    }
+
+    private static void ConfigureCustomMipImporter(string assetPath, CustomMipMapGeneratorSettings settings)
+    {
+        var importer = AssetImporter.GetAtPath(assetPath) as CustomMipMapGeneratorImporter;
+        if (importer == null)
+        {
+            Debug.LogWarning($"Custom mip importer not found for {assetPath}.");
+            return;
+        }
+
+        importer.WrapModeU = settings.wrapModeU;
+        importer.WrapModeV = settings.wrapModeV;
+        importer.SamplerFilterMode = settings.samplerFilterMode;
+        importer.AnisoLevel = settings.anisoLevel;
+        importer.MipBias = settings.mipBias;
+        importer.SaveAndReimport();
+    }
+
+    private static void ApplySamplingSettings(Texture2D texture, CustomMipMapGeneratorSettings settings)
+    {
+        if (texture == null || settings == null)
+            return;
+
+        texture.wrapModeU = settings.wrapModeU;
+        texture.wrapModeV = settings.wrapModeV;
+        texture.filterMode = settings.samplerFilterMode;
+        texture.anisoLevel = Mathf.Clamp(settings.anisoLevel, 1, 16);
+        texture.mipMapBias = settings.mipBias;
     }
 
     private static void SaveOrUpdateAsset(Texture2D mipTexture, string assetPath)

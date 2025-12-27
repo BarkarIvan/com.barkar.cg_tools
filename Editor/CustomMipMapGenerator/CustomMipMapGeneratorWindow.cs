@@ -7,10 +7,13 @@ namespace CustomMipMapGenerator
 {
 public class CustomMipMapGeneratorWindow : EditorWindow
 {
+    private enum OutputMode { SingleFile, Variants }
+
     private const string ComputeShaderFileName = "CustomMipMapGenerator.compute";
     private Texture2D sourceTexture;
     private CustomMipMapGeneratorSettings settings = new CustomMipMapGeneratorSettings();
     private Vector2 scrollPosition;
+    private OutputMode outputMode = OutputMode.SingleFile;
     private AlphaFilterMode savedAlphaFilterMode = AlphaFilterMode.None;
     private bool hasSavedAlphaFilterMode;
     private AlphaFilterMode savedAlphaFilterModeForData = AlphaFilterMode.None;
@@ -38,9 +41,16 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private static readonly GUIContent MaxFilterMinLabel = new GUIContent("Min Radius", "Minimum dilation radius for MaxFilter alpha.");
     private static readonly GUIContent MaxFilterMaxLabel = new GUIContent("Max Radius", "Maximum dilation radius for MaxFilter alpha.");
     private static readonly GUIContent MaxFilterStepLabel = new GUIContent("Increase Every N Mip Levels", "Increase dilation radius after every N mip levels.");
-    private static readonly GUIContent VariantsLabel = new GUIContent("Platform Variants", "Generate platform-specific variant assets.");
-    private static readonly GUIContent MobileCompressionLabel = new GUIContent("Mobile (.mobile)", "Compression format for mobile variant asset.");
-    private static readonly GUIContent PcCompressionLabel = new GUIContent("Standalone (.standalone)", "Compression format for standalone desktop variant asset.");
+    private static readonly GUIContent OutputLabel = new GUIContent("Output", "Output file mode and compression settings.");
+    private static readonly GUIContent OutputModeLabel = new GUIContent("Output Mode", "Single file uses .cmips and importer-driven compression per build target.");
+    private static readonly GUIContent SamplerLabel = new GUIContent("Sampling", "Wrap, filtering, and anisotropic settings for the output texture.");
+    private static readonly GUIContent WrapULabel = new GUIContent("Wrap U");
+    private static readonly GUIContent WrapVLabel = new GUIContent("Wrap V");
+    private static readonly GUIContent SamplerFilterLabel = new GUIContent("Sampler Filter");
+    private static readonly GUIContent AnisoLabel = new GUIContent("Aniso Level");
+    private static readonly GUIContent MipBiasLabel = new GUIContent("Mip Bias");
+    private static readonly GUIContent MobileCompressionLabel = new GUIContent("Mobile", "Compression format for mobile targets (Android/iOS/tvOS).");
+    private static readonly GUIContent PcCompressionLabel = new GUIContent("Standalone", "Compression format for standalone desktop targets.");
     private static readonly GUIContent PerChannelFilterLabel = new GUIContent("Per-Channel Filters", "Override filter per channel (Average/Min/Max/LinearRoughness/LinearSmoothness/PowerMean/PreserveCoverage).");
     private static readonly GUIContent ChannelFilterRLabel = new GUIContent("R");
     private static readonly GUIContent ChannelFilterGLabel = new GUIContent("G");
@@ -82,8 +92,10 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         "Metallic: Average for blends, Power Mean (p>1) or Max to keep metal specks.";
     private const string NormalPackingWarning =
         "This generator outputs raw RGB normals (xyz in RGB). Use tex.rgb*2-1 in shader; do not use Unity normal decoding.";
+    private const string SingleFileHelpText =
+        "Creates a single *.cmips file. Importer compresses per target (mobile/standalone) without regenerating mips.";
     private const string VariantsHelpText =
-        "Creates *_customMips.mobile.asset and *_customMips.standalone.asset. Build swap normalizes all variants to the target platform.";
+        "Creates *.mobile.asset and *.standalone.asset. Build swap normalizes all variants to the target platform.";
 
     [MenuItem("Tools/Custom MipMap Generator/Open Window")]
     public static void ShowWindow()
@@ -225,8 +237,16 @@ public class CustomMipMapGeneratorWindow : EditorWindow
                 EditorGUILayout.HelpBox("Alpha filter mode overrides the A channel filter.", MessageType.Info);
         }
         GUILayout.Space(6);
-        GUILayout.Label(VariantsLabel, EditorStyles.boldLabel);
-        EditorGUILayout.HelpBox(VariantsHelpText, MessageType.Info);
+        GUILayout.Label(SamplerLabel, EditorStyles.boldLabel);
+        settings.wrapModeU = (TextureWrapMode)EditorGUILayout.EnumPopup(WrapULabel, settings.wrapModeU);
+        settings.wrapModeV = (TextureWrapMode)EditorGUILayout.EnumPopup(WrapVLabel, settings.wrapModeV);
+        settings.samplerFilterMode = (UnityEngine.FilterMode)EditorGUILayout.EnumPopup(SamplerFilterLabel, settings.samplerFilterMode);
+        settings.anisoLevel = EditorGUILayout.IntSlider(AnisoLabel, settings.anisoLevel, 1, 16);
+        settings.mipBias = EditorGUILayout.Slider(MipBiasLabel, settings.mipBias, -2f, 2f);
+        GUILayout.Space(6);
+        GUILayout.Label(OutputLabel, EditorStyles.boldLabel);
+        outputMode = (OutputMode)EditorGUILayout.EnumPopup(OutputModeLabel, outputMode);
+        EditorGUILayout.HelpBox(outputMode == OutputMode.SingleFile ? SingleFileHelpText : VariantsHelpText, MessageType.Info);
         settings.compressionMobile = (TextureFormat)EditorGUILayout.EnumPopup(MobileCompressionLabel, settings.compressionMobile);
         settings.compressionPc = (TextureFormat)EditorGUILayout.EnumPopup(PcCompressionLabel, settings.compressionPc);
         if (showToksvigHelp)
@@ -234,12 +254,20 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         GUILayout.Space(20);
         if (sourceTexture != null)
         {
-            if (GUILayout.Button("Generate Mobile Variant (.mobile)"))
-                GenerateVariantMipMaps(settings.compressionMobile, ".mobile");
-            if (GUILayout.Button("Generate Standalone Variant (.standalone)"))
-                GenerateStandaloneVariant();
-            if (GUILayout.Button("Generate Both Variants"))
-                GenerateAllVariants();
+            if (outputMode == OutputMode.SingleFile)
+            {
+                if (GUILayout.Button("Generate Custom Mip File (.cmips)"))
+                    GenerateCustomMipFile();
+            }
+            else
+            {
+                if (GUILayout.Button("Generate Mobile Variant (.mobile)"))
+                    GenerateVariantMipMaps(settings.compressionMobile, ".mobile");
+                if (GUILayout.Button("Generate Standalone Variant (.standalone)"))
+                    GenerateStandaloneVariant();
+                if (GUILayout.Button("Generate Both Variants"))
+                    GenerateAllVariants();
+            }
         }
         EditorGUILayout.EndScrollView();
     }
@@ -254,6 +282,13 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private void GenerateVariantMipMaps(ComputeShader shader, TextureFormat compression, string suffix)
     {
         CustomMipMapGeneratorGpu.Generate(sourceTexture, settings, shader, compression, suffix);
+    }
+
+    private void GenerateCustomMipFile()
+    {
+        if (!TryGetShader(out var shader))
+            return;
+        CustomMipMapGeneratorGpu.GenerateCustomMipFile(sourceTexture, settings, shader);
     }
 
     private void GenerateStandaloneVariant()
