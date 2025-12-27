@@ -95,7 +95,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private const string SingleFileHelpText =
         "Creates a single *.cmips file. Importer compresses per target (mobile/standalone) without regenerating mips.";
     private const string VariantsHelpText =
-        "Creates *.mobile.asset and *.standalone.asset. Build swap normalizes all variants to the target platform.";
+        "Creates *.mobile.asset and *.standalone.asset (no automatic swap).";
 
     [MenuItem("Tools/Custom MipMap Generator/Open Window")]
     public static void ShowWindow()

@@ -115,7 +115,6 @@
             <ul>
               <li>Editor window: <code>CustomMipMapGeneratorWindow.cs</code></li>
               <li>Compute shader: <code>CustomMipMapGenerator.compute</code></li>
-              <li>Build swap: <code>CustomMipMapGeneratorBuildSwap.cs</code></li>
             </ul>
           </div>
           <div>
@@ -140,7 +139,7 @@
           <li>Single File: Generate Custom Mip File (.cmips).</li>
           <li>Variants: Generate Standalone or Both Variants.</li>
         </ol>
-        <p class="note">Single file uses the importer to compress per build target. Variant assets use build swap.</p>
+        <p class="note">Single file uses the importer to compress per build target.</p>
       </section>
 
       <section>
@@ -232,20 +231,11 @@
 
       <section>
         <h2>Platform Variants</h2>
-        <p>Legacy workflow that stores separate assets per platform.</p>
+        <p>Legacy workflow that stores separate assets per platform (manual selection, no automatic swap).</p>
         <ul>
           <li>Standalone: <code>*.standalone.asset</code></li>
           <li>Mobile: <code>*.mobile.asset</code></li>
         </ul>
-        <h3>Build Swap</h3>
-        <ul>
-          <li>All variants are normalized to the target platform during build.</li>
-          <li>Android/iOS/tvOS target <code>.mobile.asset</code>.</li>
-          <li>Desktop targets use <code>.standalone.asset</code>.</li>
-        </ul>
-        <p class="note">
-          If a build is interrupted, use Tools - Custom MipMap Generator - Restore Build Swap Backups.
-        </p>
       </section>
 
       <section>
