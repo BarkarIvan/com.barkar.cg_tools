@@ -256,6 +256,10 @@ public static class CustomMipMapGeneratorGpu
 
     private static void SaveOrUpdateAsset(Texture2D mipTexture, string assetPath)
     {
+        var assetName = Path.GetFileNameWithoutExtension(assetPath);
+        if (!string.IsNullOrEmpty(assetName))
+            mipTexture.name = assetName;
+
         var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
         if (existing == null)
         {
@@ -273,6 +277,8 @@ public static class CustomMipMapGeneratorGpu
         }
 
         EditorUtility.CopySerialized(mipTexture, existing);
+        if (!string.IsNullOrEmpty(assetName) && existing.name != assetName)
+            existing.name = assetName;
         EditorUtility.SetDirty(existing);
         AssetDatabase.SaveAssets();
         AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
