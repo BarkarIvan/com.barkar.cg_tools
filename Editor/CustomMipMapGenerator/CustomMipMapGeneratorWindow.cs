@@ -10,6 +10,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private const string ComputeShaderFileName = "CustomMipMapGenerator.compute";
     private Texture2D sourceTexture;
     private CustomMipMapGeneratorSettings settings = new CustomMipMapGeneratorSettings();
+    private Vector2 scrollPosition;
     private AlphaFilterMode savedAlphaFilterMode = AlphaFilterMode.None;
     private bool hasSavedAlphaFilterMode;
     private AlphaFilterMode savedAlphaFilterModeForData = AlphaFilterMode.None;
@@ -94,6 +95,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private void OnGUI()
     {
         GUILayout.Label("Custom MipMap Generator", EditorStyles.boldLabel);
+        scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition);
         sourceTexture = (Texture2D)EditorGUILayout.ObjectField(TextureLabel, sourceTexture, typeof(Texture2D), false);
         bool wasNormalMap = settings.textureKind == TextureKind.NormalMap;
         bool wasDataMap = settings.textureKind == TextureKind.DataMap;
@@ -243,6 +245,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
             if (GUILayout.Button("Generate All Variants"))
                 GenerateAllVariants();
         }
+        EditorGUILayout.EndScrollView();
     }
 
     private void GenerateVariantMipMaps(TextureFormat compression, string suffix)

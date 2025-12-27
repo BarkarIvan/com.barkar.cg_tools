@@ -157,9 +157,20 @@
         </ul>
         <h3>Data Map</h3>
         <ul>
-          <li>Linear data, no gamma correction.</li>
-          <li>Per-channel filters available; alpha filter is hidden.</li>
-          <li>Use per-channel PreserveCoverage for mask-like channels.</li>
+          <li>Linear data, no sRGB/gamma correction.</li>
+          <li>Alpha Filter Mode is hidden; use per-channel filters instead.</li>
+          <li>PreserveCoverage can be applied per-channel and uses the Alpha Clip threshold.</li>
+          <li>For mask-like channels, use per-channel PreserveCoverage.</li>
+        </ul>
+        <h3>Per-Channel Filters</h3>
+        <ul>
+          <li>Average: weighted filter.</li>
+          <li>Min/Max: choose extreme in kernel.</li>
+          <li>Linear Roughness: sqrt(mean(r^2)).</li>
+          <li>Linear Smoothness: 1 - sqrt(mean((1 - s)^2)).</li>
+          <li>Power Mean: (mean(x^p))^(1/p), p &lt; 1 biases dark, p &gt; 1 biases bright.</li>
+          <li>PreserveCoverage: scale channel to keep coverage at Alpha Clip.</li>
+          <li>Metallic tip: Average for blends, Power Mean (p &gt; 1) or Max to keep metal specks.</li>
         </ul>
       </section>
 
