@@ -23,7 +23,7 @@ public static class CustomMipMapGeneratorGpu
 
     public static void Generate(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader)
     {
-        GenerateInternal(sourceTexture, settings, shader, settings.compressionPc, null);
+        GenerateInternal(sourceTexture, settings, shader, settings.compressionPc, ".pc");
     }
 
     public static void Generate(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader,
@@ -203,7 +203,8 @@ public static class CustomMipMapGeneratorGpu
             }
             EditorUtility.CompressTexture(mipTexture, compressionOverride, TextureCompressionQuality.Best);
 
-            var newPath = BuildOutputPath(path, outputSuffix);
+            var resolvedSuffix = string.IsNullOrWhiteSpace(outputSuffix) ? ".pc" : outputSuffix;
+            var newPath = BuildOutputPath(path, resolvedSuffix);
             SaveOrUpdateAsset(mipTexture, newPath);
 
             RestoreImporter(importer, isNormalMap, isDataMap);

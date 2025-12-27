@@ -136,10 +136,10 @@
           <li>Assign the source texture.</li>
           <li>Select Texture Type (Color, Normal Map, Data Map).</li>
           <li>Adjust filter and sharpening settings.</li>
-          <li>Click Generate PC Variant (.pc) to create <code>*_customMips.asset</code> and <code>*_customMips.pc.asset</code>.</li>
+          <li>Click Generate PC Variant (.pc) to create <code>*_customMips.pc.asset</code>.</li>
           <li>Optional: Generate All Variants for mobile and Linux copies.</li>
         </ol>
-        <p class="note">Materials should reference the base <code>*_customMips.asset</code> only.</p>
+        <p class="note">Materials should reference <code>*_customMips.pc.asset</code>.</p>
       </section>
 
       <section>
@@ -201,16 +201,15 @@
         <h2>Platform Variants</h2>
         <p>Generate platform-specific copies without runtime code.</p>
         <ul>
-          <li>Base: <code>*_customMips.asset</code> (generated using PC compression).</li>
+          <li>Primary: <code>*_customMips.pc.asset</code></li>
           <li>Mobile: <code>*_customMips.mobile.asset</code></li>
-          <li>PC: <code>*_customMips.pc.asset</code></li>
           <li>Linux: <code>*_customMips.linux.asset</code></li>
         </ul>
         <h3>Build Swap</h3>
         <ul>
           <li>Android/iOS/tvOS use <code>.mobile.asset</code>.</li>
-          <li>Windows/macOS use <code>.pc.asset</code>.</li>
           <li>Linux uses <code>.linux.asset</code>.</li>
+          <li>Windows/macOS use <code>.pc.asset</code> (no swap).</li>
         </ul>
         <p class="note">
           If a build is interrupted, use Tools - Custom MipMap Generator - Restore Build Swap Backups.
@@ -241,7 +240,7 @@
         <h3>Material Lost Reference</h3>
         <ul>
           <li>Assets are updated in place to keep GUIDs intact.</li>
-          <li>If you delete the asset, references will break.</li>
+          <li>If you delete the <code>*.pc.asset</code>, references will break.</li>
         </ul>
       </section>
     </main>

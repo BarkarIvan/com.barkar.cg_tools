@@ -10,7 +10,7 @@ namespace CustomMipMapGenerator
 {
     public sealed class CustomMipMapGeneratorBuildSwap : IPreprocessBuildWithReport, IPostprocessBuildWithReport
     {
-        // Naming: <name>.mobile.asset, <name>.pc.asset, <name>.linux.asset swap into <name>.asset at build time.
+        // Naming: <name>.mobile.asset and <name>.linux.asset swap into <name>.pc.asset at build time.
         private const string MobileSuffix = ".mobile.asset";
         private const string PcSuffix = ".pc.asset";
         private const string LinuxSuffix = ".linux.asset";
@@ -52,7 +52,7 @@ namespace CustomMipMapGenerator
                 case BuildTarget.StandaloneWindows:
                 case BuildTarget.StandaloneWindows64:
                 case BuildTarget.StandaloneOSX:
-                    return PcSuffix;
+                    return null;
                 case BuildTarget.StandaloneLinux64:
                     return LinuxSuffix;
                 default:
@@ -81,11 +81,9 @@ namespace CustomMipMapGenerator
                 if (string.IsNullOrEmpty(variantAssetPath))
                     continue;
 
-                var baseAssetPath = variantAssetPath.Substring(0, variantAssetPath.Length - suffix.Length) + ".asset";
-                var baseFullPath = ToFullPath(baseAssetPath);
-                if (string.IsNullOrEmpty(baseFullPath) || !File.Exists(baseFullPath))
+                if (!TryGetBaseAssetPath(variantAssetPath, suffix, out var baseAssetPath, out var baseFullPath))
                 {
-                    Debug.LogWarning($"Custom MipMap build swap: base asset not found for {variantAssetPath}.");
+                    Debug.LogWarning($"Custom MipMap build swap: base asset not found for {variantAssetPath}. Expected {PcSuffix} (or legacy .asset).");
                     continue;
                 }
 
@@ -200,6 +198,36 @@ namespace CustomMipMapGenerator
                 return null;
 
             return Path.GetFullPath(Path.Combine(projectRoot, assetPath));
+        }
+
+        private static bool TryGetBaseAssetPath(string variantAssetPath, string variantSuffix, out string baseAssetPath,
+            out string baseFullPath)
+        {
+            baseAssetPath = ReplaceSuffix(variantAssetPath, variantSuffix, PcSuffix);
+            baseFullPath = ToFullPath(baseAssetPath);
+            if (!string.IsNullOrEmpty(baseFullPath) && File.Exists(baseFullPath))
+                return true;
+
+            var legacyAssetPath = variantAssetPath.Substring(0, variantAssetPath.Length - variantSuffix.Length) + ".asset";
+            var legacyFullPath = ToFullPath(legacyAssetPath);
+            if (!string.IsNullOrEmpty(legacyFullPath) && File.Exists(legacyFullPath))
+            {
+                baseAssetPath = legacyAssetPath;
+                baseFullPath = legacyFullPath;
+                return true;
+            }
+
+            baseFullPath = null;
+            return false;
+        }
+
+        private static string ReplaceSuffix(string assetPath, string suffix, string replacement)
+        {
+            if (string.IsNullOrEmpty(assetPath))
+                return assetPath;
+            if (!assetPath.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
+                return assetPath;
+            return assetPath.Substring(0, assetPath.Length - suffix.Length) + replacement;
         }
 
         private static string BackupRoot

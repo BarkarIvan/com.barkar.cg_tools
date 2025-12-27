@@ -84,7 +84,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private const string NormalPackingWarning =
         "This generator outputs raw RGB normals (xyz in RGB). Use tex.rgb*2-1 in shader; do not use Unity normal decoding.";
     private const string VariantsHelpText =
-        "Creates *_customMips.mobile.asset, *_customMips.pc.asset, and *_customMips.linux.asset for build-time swapping. Base *_customMips.asset uses PC compression.";
+        "Creates *_customMips.mobile.asset, *_customMips.pc.asset, and *_customMips.linux.asset for build-time swapping. Use *_customMips.pc.asset on materials.";
 
     [MenuItem("Tools/Custom MipMap Generator/Open Window")]
     public static void ShowWindow()
@@ -260,16 +260,10 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         CustomMipMapGeneratorGpu.Generate(sourceTexture, settings, shader, compression, suffix);
     }
 
-    private void GenerateBaseMipMaps(ComputeShader shader, TextureFormat compression)
-    {
-        CustomMipMapGeneratorGpu.Generate(sourceTexture, settings, shader, compression, null);
-    }
-
     private void GeneratePcVariant()
     {
         if (!TryGetShader(out var shader))
             return;
-        GenerateBaseMipMaps(shader, settings.compressionPc);
         GenerateVariantMipMaps(shader, settings.compressionPc, ".pc");
     }
 
@@ -277,7 +271,6 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     {
         if (!TryGetShader(out var shader))
             return;
-        GenerateBaseMipMaps(shader, settings.compressionPc);
         GenerateVariantMipMaps(shader, settings.compressionPc, ".pc");
         GenerateVariantMipMaps(shader, settings.compressionLinux, ".linux");
         GenerateVariantMipMaps(shader, settings.compressionMobile, ".mobile");
