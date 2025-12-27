@@ -23,6 +23,18 @@ public static class CustomMipMapGeneratorGpu
 
     public static void Generate(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader)
     {
+        GenerateInternal(sourceTexture, settings, shader, settings.compression, null);
+    }
+
+    public static void Generate(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader,
+        TextureFormat compressionOverride, string outputSuffix)
+    {
+        GenerateInternal(sourceTexture, settings, shader, compressionOverride, outputSuffix);
+    }
+
+    private static void GenerateInternal(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader,
+        TextureFormat compressionOverride, string outputSuffix)
+    {
         if (!SystemInfo.supportsComputeShaders)
         {
             Debug.LogError("Compute shaders are not supported on this system.");
@@ -167,9 +179,9 @@ public static class CustomMipMapGeneratorGpu
                 return;
 
             mipTexture.Apply(false, false);
-            EditorUtility.CompressTexture(mipTexture, settings.compression, TextureCompressionQuality.Best);
+            EditorUtility.CompressTexture(mipTexture, compressionOverride, TextureCompressionQuality.Best);
 
-            var newPath = Path.GetDirectoryName(path) + "/" + Path.GetFileNameWithoutExtension(path) + "_customMips.asset";
+            var newPath = BuildOutputPath(path, outputSuffix);
             AssetDatabase.CreateAsset(mipTexture, newPath);
             AssetDatabase.SaveAssets();
 
@@ -214,6 +226,15 @@ public static class CustomMipMapGeneratorGpu
         importer.sRGBTexture = !isNormalMap && !isDataMap;
         importer.mipmapEnabled = true;
         importer.SaveAndReimport();
+    }
+
+    private static string BuildOutputPath(string sourcePath, string suffix)
+    {
+        var dir = Path.GetDirectoryName(sourcePath);
+        var baseName = Path.GetFileNameWithoutExtension(sourcePath);
+        var normalizedSuffix = string.IsNullOrEmpty(suffix) ? string.Empty : (suffix.StartsWith(".") ? suffix : "." + suffix);
+        var safeDir = string.IsNullOrEmpty(dir) ? "Assets" : dir.Replace('\\', '/');
+        return safeDir + "/" + baseName + "_customMips" + normalizedSuffix + ".asset";
     }
 
     private static RenderTexture CreateMipRenderTexture(int width, int height)

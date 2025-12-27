@@ -36,6 +36,10 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private static readonly GUIContent MaxFilterMaxLabel = new GUIContent("Max Radius", "Maximum dilation radius for MaxFilter alpha.");
     private static readonly GUIContent MaxFilterStepLabel = new GUIContent("Increase Every N Mip Levels", "Increase dilation radius after every N mip levels.");
     private static readonly GUIContent CompressionLabel = new GUIContent("Compression", "Final texture compression format.");
+    private static readonly GUIContent VariantsLabel = new GUIContent("Platform Variants", "Generate platform-specific variant assets.");
+    private static readonly GUIContent MobileCompressionLabel = new GUIContent("Mobile (.mobile)", "Compression format for mobile variant asset.");
+    private static readonly GUIContent PcCompressionLabel = new GUIContent("PC (.pc)", "Compression format for PC variant asset.");
+    private static readonly GUIContent LinuxCompressionLabel = new GUIContent("Linux (.linux)", "Compression format for Linux variant asset.");
     private static readonly GUIContent PerChannelFilterLabel = new GUIContent("Per-Channel Filters", "Override filter per channel (Average/Min/Max/LinearRoughness/LinearSmoothness/PowerMean/PreserveCoverage).");
     private static readonly GUIContent ChannelFilterRLabel = new GUIContent("R");
     private static readonly GUIContent ChannelFilterGLabel = new GUIContent("G");
@@ -79,8 +83,10 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         "Metallic: Average for blends, Power Mean (p>1) or Max to keep metal specks.";
     private const string NormalPackingWarning =
         "This generator outputs raw RGB normals (xyz in RGB). Use tex.rgb*2-1 in shader; do not use Unity normal decoding.";
+    private const string VariantsHelpText =
+        "Creates *_customMips.mobile.asset, *_customMips.pc.asset, and *_customMips.linux.asset for build-time swapping.";
 
-    [MenuItem("Tools/Custom MipMap Generator")]
+    [MenuItem("Tools/Custom MipMap Generator/Open Window")]
     public static void ShowWindow()
     {
         GetWindow<CustomMipMapGeneratorWindow>("Custom MipMap Generator");
@@ -219,24 +225,56 @@ public class CustomMipMapGeneratorWindow : EditorWindow
                 EditorGUILayout.HelpBox("Alpha filter mode overrides the A channel filter.", MessageType.Info);
         }
         settings.compression = (TextureFormat)EditorGUILayout.EnumPopup(CompressionLabel, settings.compression);
+        GUILayout.Space(6);
+        GUILayout.Label(VariantsLabel, EditorStyles.boldLabel);
+        EditorGUILayout.HelpBox(VariantsHelpText, MessageType.Info);
+        settings.compressionMobile = (TextureFormat)EditorGUILayout.EnumPopup(MobileCompressionLabel, settings.compressionMobile);
+        settings.compressionPc = (TextureFormat)EditorGUILayout.EnumPopup(PcCompressionLabel, settings.compressionPc);
+        settings.compressionLinux = (TextureFormat)EditorGUILayout.EnumPopup(LinuxCompressionLabel, settings.compressionLinux);
         if (showToksvigHelp)
             EditorGUILayout.HelpBox(ToksvigHelpText, MessageType.Info);
         GUILayout.Space(20);
-        if (sourceTexture != null && GUILayout.Button("Generate"))
-            GenerateCustomMipMaps();
+        if (sourceTexture != null)
+        {
+            if (GUILayout.Button("Generate"))
+                GenerateCustomMipMaps();
+            if (GUILayout.Button("Generate Mobile Variant (.mobile)"))
+                GenerateVariantMipMaps(settings.compressionMobile, ".mobile");
+            if (GUILayout.Button("Generate PC Variant (.pc)"))
+                GenerateVariantMipMaps(settings.compressionPc, ".pc");
+            if (GUILayout.Button("Generate Linux Variant (.linux)"))
+                GenerateVariantMipMaps(settings.compressionLinux, ".linux");
+            if (GUILayout.Button("Generate All Variants"))
+                GenerateAllVariants();
+        }
     }
 
     private void GenerateCustomMipMaps()
     {
-        var shaderPath = GetComputeShaderPath();
-        var shader = AssetDatabase.LoadAssetAtPath<ComputeShader>(shaderPath);
-        if (shader == null)
-        {
-            Debug.LogError($"Compute shader not found at {shaderPath}.");
+        if (!TryGetShader(out var shader))
             return;
-        }
-
         CustomMipMapGeneratorGpu.Generate(sourceTexture, settings, shader);
+    }
+
+    private void GenerateVariantMipMaps(TextureFormat compression, string suffix)
+    {
+        if (!TryGetShader(out var shader))
+            return;
+        GenerateVariantMipMaps(shader, compression, suffix);
+    }
+
+    private void GenerateVariantMipMaps(ComputeShader shader, TextureFormat compression, string suffix)
+    {
+        CustomMipMapGeneratorGpu.Generate(sourceTexture, settings, shader, compression, suffix);
+    }
+
+    private void GenerateAllVariants()
+    {
+        if (!TryGetShader(out var shader))
+            return;
+        GenerateVariantMipMaps(shader, settings.compressionMobile, ".mobile");
+        GenerateVariantMipMaps(shader, settings.compressionPc, ".pc");
+        GenerateVariantMipMaps(shader, settings.compressionLinux, ".linux");
     }
 
     private int GetMaxFullResMipCount()
@@ -260,6 +298,19 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         if (string.IsNullOrEmpty(dir))
             return ComputeShaderFileName;
         return Path.Combine(dir, ComputeShaderFileName).Replace('\\', '/');
+    }
+
+    private bool TryGetShader(out ComputeShader shader)
+    {
+        var shaderPath = GetComputeShaderPath();
+        shader = AssetDatabase.LoadAssetAtPath<ComputeShader>(shaderPath);
+        if (shader == null)
+        {
+            Debug.LogError($"Compute shader not found at {shaderPath}.");
+            return false;
+        }
+
+        return true;
     }
 
     private static bool CompressionHasAlpha(TextureFormat format)

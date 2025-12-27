@@ -32,6 +32,9 @@ namespace CustomMipMapGenerator
         public bool sharpenNormals;
         public bool toksvigInAlpha;
         public TextureFormat compression = TextureFormat.ASTC_6x6;
+        public TextureFormat compressionMobile = TextureFormat.ASTC_6x6;
+        public TextureFormat compressionPc = TextureFormat.BC7;
+        public TextureFormat compressionLinux = TextureFormat.BC7;
         public float kaiserBeta = 6f;
         public float baseRadius = 3f;
         public bool usePerChannelFilter;
