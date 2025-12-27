@@ -182,8 +182,7 @@ public static class CustomMipMapGeneratorGpu
             EditorUtility.CompressTexture(mipTexture, compressionOverride, TextureCompressionQuality.Best);
 
             var newPath = BuildOutputPath(path, outputSuffix);
-            AssetDatabase.CreateAsset(mipTexture, newPath);
-            AssetDatabase.SaveAssets();
+            SaveOrUpdateAsset(mipTexture, newPath);
 
             RestoreImporter(importer, isNormalMap, isDataMap);
 
@@ -235,6 +234,31 @@ public static class CustomMipMapGeneratorGpu
         var normalizedSuffix = string.IsNullOrEmpty(suffix) ? string.Empty : (suffix.StartsWith(".") ? suffix : "." + suffix);
         var safeDir = string.IsNullOrEmpty(dir) ? "Assets" : dir.Replace('\\', '/');
         return safeDir + "/" + baseName + "_customMips" + normalizedSuffix + ".asset";
+    }
+
+    private static void SaveOrUpdateAsset(Texture2D mipTexture, string assetPath)
+    {
+        var existing = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+        if (existing == null)
+        {
+            var existingObject = AssetDatabase.LoadAssetAtPath<Object>(assetPath);
+            if (existingObject != null)
+            {
+                Debug.LogError($"Cannot overwrite non-texture asset at {assetPath}.");
+                Object.DestroyImmediate(mipTexture);
+                return;
+            }
+
+            AssetDatabase.CreateAsset(mipTexture, assetPath);
+            AssetDatabase.SaveAssets();
+            return;
+        }
+
+        EditorUtility.CopySerialized(mipTexture, existing);
+        EditorUtility.SetDirty(existing);
+        AssetDatabase.SaveAssets();
+        AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+        Object.DestroyImmediate(mipTexture);
     }
 
     private static RenderTexture CreateMipRenderTexture(int width, int height)
