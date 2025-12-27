@@ -216,6 +216,7 @@ namespace CustomMipMapGenerator
             File.Copy(assetFullPath, backupPath, true);
             File.Copy(targetFullPath, assetFullPath, true);
             AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+            NormalizeAssetName(assetPath);
 
             entries.Add(new SwapEntry
             {
@@ -225,6 +226,21 @@ namespace CustomMipMapGenerator
             });
 
             return true;
+        }
+
+        private static void NormalizeAssetName(string assetPath)
+        {
+            var destination = AssetDatabase.LoadAssetAtPath<Texture2D>(assetPath);
+            if (destination == null)
+                return;
+
+            var desiredName = Path.GetFileNameWithoutExtension(assetPath);
+            if (destination.name == desiredName)
+                return;
+
+            destination.name = desiredName;
+            EditorUtility.SetDirty(destination);
+            AssetDatabase.SaveAssets();
         }
 
         private static Dictionary<string, VariantGroup> CollectVariantGroups(string dataPath)
