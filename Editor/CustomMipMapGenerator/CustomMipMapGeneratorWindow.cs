@@ -1,4 +1,5 @@
 ﻿using System.IO;
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -36,7 +37,6 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private static readonly GUIContent MaxFilterMinLabel = new GUIContent("Min Radius", "Minimum dilation radius for MaxFilter alpha.");
     private static readonly GUIContent MaxFilterMaxLabel = new GUIContent("Max Radius", "Maximum dilation radius for MaxFilter alpha.");
     private static readonly GUIContent MaxFilterStepLabel = new GUIContent("Increase Every N Mip Levels", "Increase dilation radius after every N mip levels.");
-    private static readonly GUIContent CompressionLabel = new GUIContent("Compression", "Final texture compression format.");
     private static readonly GUIContent VariantsLabel = new GUIContent("Platform Variants", "Generate platform-specific variant assets.");
     private static readonly GUIContent MobileCompressionLabel = new GUIContent("Mobile (.mobile)", "Compression format for mobile variant asset.");
     private static readonly GUIContent PcCompressionLabel = new GUIContent("PC (.pc)", "Compression format for PC variant asset.");
@@ -68,8 +68,6 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         "rough = pow(a2, 0.25);                     // вернуть r так, чтобы Pow4(r)==a2\n" +
         "\n" +
         "// дальше используй `rough` как обычно в GGX";
-    private const string ToksvigAlphaWarning =
-        "Toksvig uses alpha. Selected compression may drop alpha (use ASTC/BC7/RGBA).";
     private const string ToksvigAlphaFilterWarning =
         "Toksvig uses alpha. Alpha filter is forced to None while enabled.";
     private const string DataMapHelpText =
@@ -85,7 +83,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private const string NormalPackingWarning =
         "This generator outputs raw RGB normals (xyz in RGB). Use tex.rgb*2-1 in shader; do not use Unity normal decoding.";
     private const string VariantsHelpText =
-        "Creates *_customMips.mobile.asset, *_customMips.pc.asset, and *_customMips.linux.asset for build-time swapping.";
+        "Creates *_customMips.mobile.asset, *_customMips.pc.asset, and *_customMips.linux.asset for build-time swapping. Base *_customMips.asset uses PC compression.";
 
     [MenuItem("Tools/Custom MipMap Generator/Open Window")]
     public static void ShowWindow()
@@ -159,8 +157,9 @@ public class CustomMipMapGeneratorWindow : EditorWindow
             }
             if (settings.toksvigInAlpha)
             {
-                if (!CompressionHasAlpha(settings.compression))
-                    EditorGUILayout.HelpBox(ToksvigAlphaWarning, MessageType.Warning);
+                var warning = GetToksvigCompressionWarning();
+                if (!string.IsNullOrEmpty(warning))
+                    EditorGUILayout.HelpBox(warning, MessageType.Warning);
                 showToksvigHelp = true;
             }
         }
@@ -224,7 +223,6 @@ public class CustomMipMapGeneratorWindow : EditorWindow
             if (settings.alphaFilterMode != AlphaFilterMode.None)
                 EditorGUILayout.HelpBox("Alpha filter mode overrides the A channel filter.", MessageType.Info);
         }
-        settings.compression = (TextureFormat)EditorGUILayout.EnumPopup(CompressionLabel, settings.compression);
         GUILayout.Space(6);
         GUILayout.Label(VariantsLabel, EditorStyles.boldLabel);
         EditorGUILayout.HelpBox(VariantsHelpText, MessageType.Info);
@@ -236,24 +234,15 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         GUILayout.Space(20);
         if (sourceTexture != null)
         {
-            if (GUILayout.Button("Generate"))
-                GenerateCustomMipMaps();
             if (GUILayout.Button("Generate Mobile Variant (.mobile)"))
                 GenerateVariantMipMaps(settings.compressionMobile, ".mobile");
             if (GUILayout.Button("Generate PC Variant (.pc)"))
-                GenerateVariantMipMaps(settings.compressionPc, ".pc");
+                GeneratePcVariant();
             if (GUILayout.Button("Generate Linux Variant (.linux)"))
                 GenerateVariantMipMaps(settings.compressionLinux, ".linux");
             if (GUILayout.Button("Generate All Variants"))
                 GenerateAllVariants();
         }
-    }
-
-    private void GenerateCustomMipMaps()
-    {
-        if (!TryGetShader(out var shader))
-            return;
-        CustomMipMapGeneratorGpu.Generate(sourceTexture, settings, shader);
     }
 
     private void GenerateVariantMipMaps(TextureFormat compression, string suffix)
@@ -268,13 +257,27 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         CustomMipMapGeneratorGpu.Generate(sourceTexture, settings, shader, compression, suffix);
     }
 
+    private void GenerateBaseMipMaps(ComputeShader shader, TextureFormat compression)
+    {
+        CustomMipMapGeneratorGpu.Generate(sourceTexture, settings, shader, compression, null);
+    }
+
+    private void GeneratePcVariant()
+    {
+        if (!TryGetShader(out var shader))
+            return;
+        GenerateBaseMipMaps(shader, settings.compressionPc);
+        GenerateVariantMipMaps(shader, settings.compressionPc, ".pc");
+    }
+
     private void GenerateAllVariants()
     {
         if (!TryGetShader(out var shader))
             return;
-        GenerateVariantMipMaps(shader, settings.compressionMobile, ".mobile");
+        GenerateBaseMipMaps(shader, settings.compressionPc);
         GenerateVariantMipMaps(shader, settings.compressionPc, ".pc");
         GenerateVariantMipMaps(shader, settings.compressionLinux, ".linux");
+        GenerateVariantMipMaps(shader, settings.compressionMobile, ".mobile");
     }
 
     private int GetMaxFullResMipCount()
@@ -298,6 +301,20 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         if (string.IsNullOrEmpty(dir))
             return ComputeShaderFileName;
         return Path.Combine(dir, ComputeShaderFileName).Replace('\\', '/');
+    }
+
+    private string GetToksvigCompressionWarning()
+    {
+        var missing = new List<string>(3);
+        if (!CompressionHasAlpha(settings.compressionMobile))
+            missing.Add("Mobile");
+        if (!CompressionHasAlpha(settings.compressionPc))
+            missing.Add("PC");
+        if (!CompressionHasAlpha(settings.compressionLinux))
+            missing.Add("Linux");
+        if (missing.Count == 0)
+            return null;
+        return "Toksvig uses alpha. These variants drop alpha: " + string.Join(", ", missing) + ".";
     }
 
     private bool TryGetShader(out ComputeShader shader)

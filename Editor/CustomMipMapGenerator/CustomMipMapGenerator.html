@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Custom MipMap Generator - Documentation</title>
+    <style>
+      :root {
+        --bg-1: #f7f3ea;
+        --bg-2: #eef4f7;
+        --ink: #1b1b1b;
+        --muted: #5d5a52;
+        --accent: #1f6f8b;
+        --accent-2: #c86b2a;
+        --card: #ffffff;
+        --border: #d9d2c5;
+        --shadow: 0 10px 30px rgba(17, 24, 39, 0.08);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        color: var(--ink);
+        background: linear-gradient(160deg, var(--bg-1), var(--bg-2));
+        font-family: "IBM Plex Sans", "Noto Sans", "Segoe UI", sans-serif;
+        line-height: 1.55;
+      }
+
+      header {
+        padding: 48px 24px 24px;
+      }
+
+      header h1 {
+        margin: 0 0 8px;
+        font-size: 32px;
+        letter-spacing: 0.4px;
+      }
+
+      header p {
+        margin: 0;
+        color: var(--muted);
+        max-width: 720px;
+      }
+
+      main {
+        padding: 0 24px 64px;
+        max-width: 1100px;
+        margin: 0 auto;
+        display: grid;
+        gap: 18px;
+      }
+
+      section {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: 16px;
+        padding: 20px 24px;
+        box-shadow: var(--shadow);
+      }
+
+      section h2 {
+        margin: 0 0 10px;
+        font-size: 20px;
+        color: var(--accent);
+      }
+
+      section h3 {
+        margin: 14px 0 6px;
+        font-size: 16px;
+        color: var(--accent-2);
+      }
+
+      ul, ol {
+        margin: 6px 0 0 18px;
+        padding: 0;
+      }
+
+      code {
+        font-family: "IBM Plex Mono", "SF Mono", "Consolas", monospace;
+        background: #f2ece0;
+        padding: 1px 6px;
+        border-radius: 6px;
+      }
+
+      .grid-2 {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      }
+
+      .note {
+        border-left: 4px solid var(--accent);
+        padding-left: 12px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Custom MipMap Generator</h1>
+      <p>
+        GPU-only mip generation for Unity textures with custom filtering,
+        Toksvig support for normals, and build-time platform variants.
+      </p>
+    </header>
+    <main>
+      <section>
+        <h2>Overview</h2>
+        <div class="grid-2">
+          <div>
+            <h3>Entry Points</h3>
+            <ul>
+              <li>Editor window: <code>CustomMipMapGeneratorWindow.cs</code></li>
+              <li>Compute shader: <code>CustomMipMapGenerator.compute</code></li>
+              <li>Build swap: <code>CustomMipMapGeneratorBuildSwap.cs</code></li>
+            </ul>
+          </div>
+          <div>
+            <h3>Core Behavior</h3>
+            <ul>
+              <li>GPU-only pipeline, no CPU fallback.</li>
+              <li>Mips are generated in compute and read back via AsyncGPUReadback.</li>
+              <li>Output is a <code>Texture2D</code> asset with custom mip chain.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <h2>Quick Start</h2>
+        <ol>
+          <li>Open: Tools - Custom MipMap Generator - Open Window.</li>
+          <li>Assign the source texture.</li>
+          <li>Select Texture Type (Color, Normal Map, Data Map).</li>
+          <li>Adjust filter and sharpening settings.</li>
+          <li>Click Generate PC Variant (.pc) to create <code>*_customMips.asset</code> and <code>*_customMips.pc.asset</code>.</li>
+          <li>Optional: Generate All Variants for mobile and Linux copies.</li>
+        </ol>
+        <p class="note">Materials should reference the base <code>*_customMips.asset</code> only.</p>
+      </section>
+
+      <section>
+        <h2>Texture Types</h2>
+        <h3>Color</h3>
+        <ul>
+          <li>sRGB workflow; gamma correction is applied in Gamma color space.</li>
+          <li>Edge-aware filtering is available.</li>
+        </ul>
+        <h3>Normal Map</h3>
+        <ul>
+          <li>Normals are renormalized every mip.</li>
+          <li>Optional Toksvig in alpha (<code>Toksvig In Alpha</code>).</li>
+          <li>Output is raw RGB normals. Use <code>tex.rgb * 2 - 1</code> in shader.</li>
+        </ul>
+        <h3>Data Map</h3>
+        <ul>
+          <li>Linear data, no gamma correction.</li>
+          <li>Per-channel filters available; alpha filter is hidden.</li>
+          <li>Use per-channel PreserveCoverage for mask-like channels.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Filtering and Sharpening</h2>
+        <ul>
+          <li>Filter Mode: Kaiser (sharper) or EWA (smoother).</li>
+          <li>Edge-aware option affects Color and Data maps only.</li>
+          <li>Sharpen can be applied to the first N mips.</li>
+        </ul>
+        <h3>Alpha Filtering</h3>
+        <ul>
+          <li>None, PreserveCoverage, or MaxFilter.</li>
+          <li>If Toksvig is active, alpha filtering is forced to None.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Full-Res Mips and Max Full-Res Ratio</h2>
+        <ul>
+          <li><code>Full-Res Mips</code> controls how many early mips sample the full source.</li>
+          <li><code>Max Full-Res Ratio</code> is a safety cap. If source/dest ratio is too large, the generator switches to the previous mip to avoid GPU timeouts.</li>
+          <li>Typical stable values: Full-Res Mips = 2-3, Max Full-Res Ratio = 8-16.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Platform Variants</h2>
+        <p>Generate platform-specific copies without runtime code.</p>
+        <ul>
+          <li>Base: <code>*_customMips.asset</code> (generated using PC compression).</li>
+          <li>Mobile: <code>*_customMips.mobile.asset</code></li>
+          <li>PC: <code>*_customMips.pc.asset</code></li>
+          <li>Linux: <code>*_customMips.linux.asset</code></li>
+        </ul>
+        <h3>Build Swap</h3>
+        <ul>
+          <li>Android/iOS/tvOS use <code>.mobile.asset</code>.</li>
+          <li>Windows/macOS use <code>.pc.asset</code>.</li>
+          <li>Linux uses <code>.linux.asset</code>.</li>
+        </ul>
+        <p class="note">
+          If a build is interrupted, use Tools - Custom MipMap Generator - Restore Build Swap Backups.
+        </p>
+      </section>
+
+      <section>
+        <h2>Toksvig Notes</h2>
+        <ul>
+          <li>Alpha stores |Na| for each mip.</li>
+          <li>Compression must keep alpha (ASTC RGBA, BC7, or RGBA formats).</li>
+          <li>Alpha filtering is disabled while Toksvig is enabled.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>Troubleshooting</h2>
+        <h3>Black Mips or GPU Timeouts</h3>
+        <ul>
+          <li>Reduce <code>Full-Res Mips</code> or lower <code>Max Full-Res Ratio</code>.</li>
+          <li>Lower Kaiser radius or switch to EWA.</li>
+        </ul>
+        <h3>ASTC Looks Black in Editor</h3>
+        <ul>
+          <li>Desktop GPUs often do not support ASTC decoding.</li>
+          <li>Preview the base or PC variant in editor; ASTC is for mobile builds.</li>
+        </ul>
+        <h3>Material Lost Reference</h3>
+        <ul>
+          <li>Assets are updated in place to keep GUIDs intact.</li>
+          <li>If you delete the asset, references will break.</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>

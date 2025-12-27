@@ -31,7 +31,6 @@ namespace CustomMipMapGenerator
         public int sharpenMipCount = 3;
         public bool sharpenNormals;
         public bool toksvigInAlpha;
-        public TextureFormat compression = TextureFormat.ASTC_6x6;
         public TextureFormat compressionMobile = TextureFormat.ASTC_6x6;
         public TextureFormat compressionPc = TextureFormat.BC7;
         public TextureFormat compressionLinux = TextureFormat.BC7;

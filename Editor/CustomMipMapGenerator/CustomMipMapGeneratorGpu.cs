@@ -23,7 +23,7 @@ public static class CustomMipMapGeneratorGpu
 
     public static void Generate(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader)
     {
-        GenerateInternal(sourceTexture, settings, shader, settings.compression, null);
+        GenerateInternal(sourceTexture, settings, shader, settings.compressionPc, null);
     }
 
     public static void Generate(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader,
@@ -197,6 +197,10 @@ public static class CustomMipMapGeneratorGpu
                 return;
 
             mipTexture.Apply(false, false);
+            if (!SystemInfo.SupportsTextureFormat(compressionOverride))
+            {
+                Debug.LogWarning($"Compression format {compressionOverride} is not supported on this platform. Preview may be black.");
+            }
             EditorUtility.CompressTexture(mipTexture, compressionOverride, TextureCompressionQuality.Best);
 
             var newPath = BuildOutputPath(path, outputSuffix);
