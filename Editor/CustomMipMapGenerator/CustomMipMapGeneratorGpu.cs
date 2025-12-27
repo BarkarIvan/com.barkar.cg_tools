@@ -23,7 +23,7 @@ public static class CustomMipMapGeneratorGpu
 
     public static void Generate(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader)
     {
-        GenerateInternal(sourceTexture, settings, shader, settings.compressionPc, ".pc");
+        GenerateInternal(sourceTexture, settings, shader, settings.compressionPc, ".standalone");
     }
 
     public static void Generate(Texture2D sourceTexture, CustomMipMapGeneratorSettings settings, ComputeShader shader,
@@ -173,8 +173,8 @@ public static class CustomMipMapGeneratorGpu
                 {
                     rtPrev = EnsurePrevTexture(rtPrev, prevWidth, prevHeight);
                     Graphics.CopyTexture(rt, 0, mip - 1, rtPrev, 0, 0);
-                    shader.SetTexture(kernels.Generate, "_PrevTex", rtPrev);
                 }
+                shader.SetTexture(kernels.Generate, "_PrevTex", needsPrev ? rtPrev : rt);
 
                 shader.SetTexture(kernels.Generate, "_SrcTex", sourceTexture);
                 shader.SetTexture(kernels.Generate, "_MipTex", rt);
@@ -192,7 +192,7 @@ public static class CustomMipMapGeneratorGpu
                     ApplySharpen(shader, kernels, rt, rtSharpen, settings, mip, mipWidth, mipHeight, groupsX, groupsY);
             }
 
-            var mipTexture = ReadbackTexture(rt, width, height, mipCount, isNormalMap);
+            var mipTexture = ReadbackTexture(rt, width, height, mipCount, isNormalMap || isDataMap);
             if (mipTexture == null)
                 return;
 
@@ -203,7 +203,7 @@ public static class CustomMipMapGeneratorGpu
             }
             EditorUtility.CompressTexture(mipTexture, compressionOverride, TextureCompressionQuality.Best);
 
-            var resolvedSuffix = string.IsNullOrWhiteSpace(outputSuffix) ? ".pc" : outputSuffix;
+            var resolvedSuffix = string.IsNullOrWhiteSpace(outputSuffix) ? ".standalone" : outputSuffix;
             var newPath = BuildOutputPath(path, resolvedSuffix);
             SaveOrUpdateAsset(mipTexture, newPath);
 
@@ -492,9 +492,9 @@ public static class CustomMipMapGeneratorGpu
         shader.Dispatch(kernels.Copy, groupsX, groupsY, 1);
     }
 
-    private static Texture2D ReadbackTexture(RenderTexture rt, int width, int height, int mipCount, bool isNormalMap)
+    private static Texture2D ReadbackTexture(RenderTexture rt, int width, int height, int mipCount, bool isLinear)
     {
-        var mipTexture = new Texture2D(width, height, TextureFormat.RGBA32, mipCount, isNormalMap);
+        var mipTexture = new Texture2D(width, height, TextureFormat.RGBA32, mipCount, isLinear);
         for (int mip = 0; mip < mipCount; mip++)
         {
             var request = AsyncGPUReadback.Request(rt, mip, TextureFormat.RGBA32);

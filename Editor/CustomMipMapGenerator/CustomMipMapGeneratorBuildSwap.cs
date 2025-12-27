@@ -10,11 +10,12 @@ namespace CustomMipMapGenerator
 {
     public sealed class CustomMipMapGeneratorBuildSwap : IPreprocessBuildWithReport, IPostprocessBuildWithReport
     {
-        // Naming: <name>.mobile.asset and <name>.linux.asset swap into <name>.pc.asset at build time.
+        // Naming: <name>.mobile.asset and <name>.standalone.asset are normalized to target at build time.
         private const string MobileSuffix = ".mobile.asset";
-        private const string PcSuffix = ".pc.asset";
-        private const string LinuxSuffix = ".linux.asset";
+        private const string StandaloneSuffix = ".standalone.asset";
+        private const string LegacySuffix = ".asset";
         private const string StateFileName = "swap_state.json";
+        private static readonly string[] VariantSuffixes = { MobileSuffix, StandaloneSuffix };
 
         public int callbackOrder => 0;
 
@@ -22,11 +23,11 @@ namespace CustomMipMapGenerator
         {
             RestorePendingSwaps();
 
-            var suffix = GetSuffixForTarget(report.summary.platform);
-            if (suffix == null)
+            var targetSuffix = GetSuffixForTarget(report.summary.platform);
+            if (targetSuffix == null)
                 return;
 
-            var swaps = SwapAssetsForSuffix(suffix);
+            var swaps = SwapAssetsForTarget(targetSuffix);
             SaveState(swaps);
         }
 
@@ -52,56 +53,58 @@ namespace CustomMipMapGenerator
                 case BuildTarget.StandaloneWindows:
                 case BuildTarget.StandaloneWindows64:
                 case BuildTarget.StandaloneOSX:
-                    return null;
+                    return StandaloneSuffix;
                 case BuildTarget.StandaloneLinux64:
-                    return LinuxSuffix;
+                    return StandaloneSuffix;
                 default:
                     Debug.Log($"Custom MipMap build swap: no rule for build target {target}, skipping.");
                     return null;
             }
         }
 
-        private static List<SwapEntry> SwapAssetsForSuffix(string suffix)
+        private static List<SwapEntry> SwapAssetsForTarget(string targetSuffix)
         {
             var entries = new List<SwapEntry>();
             var dataPath = Application.dataPath;
             if (string.IsNullOrEmpty(dataPath) || !Directory.Exists(dataPath))
                 return entries;
 
-            var variantFiles = Directory.GetFiles(dataPath, "*" + suffix, SearchOption.AllDirectories);
-            if (variantFiles.Length == 0)
+            var groups = CollectVariantGroups(dataPath);
+            if (groups.Count == 0)
             {
-                Debug.Log($"Custom MipMap build swap: no '{suffix}' variants found.");
+                Debug.Log("Custom MipMap build swap: no variant groups found.");
                 return entries;
             }
 
-            foreach (var variantFullPath in variantFiles)
+            var swapped = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var group in groups.Values)
             {
-                var variantAssetPath = ToAssetPath(variantFullPath);
-                if (string.IsNullOrEmpty(variantAssetPath))
-                    continue;
-
-                if (!TryGetBaseAssetPath(variantAssetPath, suffix, out var baseAssetPath, out var baseFullPath))
+                if (!group.variants.TryGetValue(targetSuffix, out var targetAssetPath))
                 {
-                    Debug.LogWarning($"Custom MipMap build swap: base asset not found for {variantAssetPath}. Expected {PcSuffix} (or legacy .asset).");
+                    Debug.LogWarning($"Custom MipMap build swap: missing {targetSuffix} for {group.baseKey}.");
                     continue;
                 }
 
-                var backupPath = CreateBackupPath(baseAssetPath);
-                File.Copy(baseFullPath, backupPath, true);
-                File.Copy(variantFullPath, baseFullPath, true);
-                AssetDatabase.ImportAsset(baseAssetPath, ImportAssetOptions.ForceUpdate);
-
-                entries.Add(new SwapEntry
+                var targetFullPath = ToFullPath(targetAssetPath);
+                if (string.IsNullOrEmpty(targetFullPath) || !File.Exists(targetFullPath))
                 {
-                    assetPath = baseAssetPath,
-                    backupPath = backupPath,
-                    variantPath = variantAssetPath
-                });
+                    Debug.LogWarning($"Custom MipMap build swap: target asset missing for {targetAssetPath}.");
+                    continue;
+                }
+
+                foreach (var assetPath in group.variants.Values)
+                {
+                    if (string.Equals(assetPath, targetAssetPath, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    if (!swapped.Add(assetPath))
+                        continue;
+                    if (!TrySwapAsset(assetPath, targetAssetPath, targetFullPath, entries))
+                        continue;
+                }
             }
 
             if (entries.Count > 0)
-                Debug.Log($"Custom MipMap build swap: swapped {entries.Count} assets using '{suffix}'.");
+                Debug.Log($"Custom MipMap build swap: swapped {entries.Count} assets to '{targetSuffix}'.");
             return entries;
         }
 
@@ -200,34 +203,62 @@ namespace CustomMipMapGenerator
             return Path.GetFullPath(Path.Combine(projectRoot, assetPath));
         }
 
-        private static bool TryGetBaseAssetPath(string variantAssetPath, string variantSuffix, out string baseAssetPath,
-            out string baseFullPath)
+        private static bool TrySwapAsset(string assetPath, string targetAssetPath, string targetFullPath, List<SwapEntry> entries)
         {
-            baseAssetPath = ReplaceSuffix(variantAssetPath, variantSuffix, PcSuffix);
-            baseFullPath = ToFullPath(baseAssetPath);
-            if (!string.IsNullOrEmpty(baseFullPath) && File.Exists(baseFullPath))
-                return true;
-
-            var legacyAssetPath = variantAssetPath.Substring(0, variantAssetPath.Length - variantSuffix.Length) + ".asset";
-            var legacyFullPath = ToFullPath(legacyAssetPath);
-            if (!string.IsNullOrEmpty(legacyFullPath) && File.Exists(legacyFullPath))
+            var assetFullPath = ToFullPath(assetPath);
+            if (string.IsNullOrEmpty(assetFullPath) || !File.Exists(assetFullPath))
             {
-                baseAssetPath = legacyAssetPath;
-                baseFullPath = legacyFullPath;
-                return true;
+                Debug.LogWarning($"Custom MipMap build swap: asset missing for {assetPath}.");
+                return false;
             }
 
-            baseFullPath = null;
-            return false;
+            var backupPath = CreateBackupPath(assetPath);
+            File.Copy(assetFullPath, backupPath, true);
+            File.Copy(targetFullPath, assetFullPath, true);
+            AssetDatabase.ImportAsset(assetPath, ImportAssetOptions.ForceUpdate);
+
+            entries.Add(new SwapEntry
+            {
+                assetPath = assetPath,
+                backupPath = backupPath,
+                variantPath = targetAssetPath
+            });
+
+            return true;
         }
 
-        private static string ReplaceSuffix(string assetPath, string suffix, string replacement)
+        private static Dictionary<string, VariantGroup> CollectVariantGroups(string dataPath)
         {
-            if (string.IsNullOrEmpty(assetPath))
-                return assetPath;
-            if (!assetPath.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                return assetPath;
-            return assetPath.Substring(0, assetPath.Length - suffix.Length) + replacement;
+            var groups = new Dictionary<string, VariantGroup>(StringComparer.OrdinalIgnoreCase);
+            foreach (var suffix in VariantSuffixes)
+            {
+                var files = Directory.GetFiles(dataPath, "*" + suffix, SearchOption.AllDirectories);
+                foreach (var variantFullPath in files)
+                {
+                    var variantAssetPath = ToAssetPath(variantFullPath);
+                    if (string.IsNullOrEmpty(variantAssetPath))
+                        continue;
+                    if (variantAssetPath.Length <= suffix.Length)
+                        continue;
+                    var baseKey = variantAssetPath.Substring(0, variantAssetPath.Length - suffix.Length);
+                    if (!groups.TryGetValue(baseKey, out var group))
+                    {
+                        group = new VariantGroup(baseKey);
+                        groups.Add(baseKey, group);
+                    }
+                    group.variants[suffix] = variantAssetPath;
+                }
+            }
+
+            foreach (var group in groups.Values)
+            {
+                var legacyPath = group.baseKey + LegacySuffix;
+                var legacyFullPath = ToFullPath(legacyPath);
+                if (!string.IsNullOrEmpty(legacyFullPath) && File.Exists(legacyFullPath))
+                    group.variants[LegacySuffix] = legacyPath;
+            }
+
+            return groups;
         }
 
         private static string BackupRoot
@@ -253,6 +284,17 @@ namespace CustomMipMapGenerator
             public string assetPath;
             public string backupPath;
             public string variantPath;
+        }
+
+        private sealed class VariantGroup
+        {
+            public readonly string baseKey;
+            public readonly Dictionary<string, string> variants = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            public VariantGroup(string baseKeyValue)
+            {
+                baseKey = baseKeyValue;
+            }
         }
     }
 }

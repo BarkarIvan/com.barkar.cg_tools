@@ -40,8 +40,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private static readonly GUIContent MaxFilterStepLabel = new GUIContent("Increase Every N Mip Levels", "Increase dilation radius after every N mip levels.");
     private static readonly GUIContent VariantsLabel = new GUIContent("Platform Variants", "Generate platform-specific variant assets.");
     private static readonly GUIContent MobileCompressionLabel = new GUIContent("Mobile (.mobile)", "Compression format for mobile variant asset.");
-    private static readonly GUIContent PcCompressionLabel = new GUIContent("PC (.pc)", "Compression format for PC variant asset.");
-    private static readonly GUIContent LinuxCompressionLabel = new GUIContent("Linux (.linux)", "Compression format for Linux variant asset.");
+    private static readonly GUIContent PcCompressionLabel = new GUIContent("Standalone (.standalone)", "Compression format for standalone desktop variant asset.");
     private static readonly GUIContent PerChannelFilterLabel = new GUIContent("Per-Channel Filters", "Override filter per channel (Average/Min/Max/LinearRoughness/LinearSmoothness/PowerMean/PreserveCoverage).");
     private static readonly GUIContent ChannelFilterRLabel = new GUIContent("R");
     private static readonly GUIContent ChannelFilterGLabel = new GUIContent("G");
@@ -84,7 +83,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private const string NormalPackingWarning =
         "This generator outputs raw RGB normals (xyz in RGB). Use tex.rgb*2-1 in shader; do not use Unity normal decoding.";
     private const string VariantsHelpText =
-        "Creates *_customMips.mobile.asset, *_customMips.pc.asset, and *_customMips.linux.asset for build-time swapping. Use *_customMips.pc.asset on materials.";
+        "Creates *_customMips.mobile.asset and *_customMips.standalone.asset. Build swap normalizes all variants to the target platform.";
 
     [MenuItem("Tools/Custom MipMap Generator/Open Window")]
     public static void ShowWindow()
@@ -230,7 +229,6 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         EditorGUILayout.HelpBox(VariantsHelpText, MessageType.Info);
         settings.compressionMobile = (TextureFormat)EditorGUILayout.EnumPopup(MobileCompressionLabel, settings.compressionMobile);
         settings.compressionPc = (TextureFormat)EditorGUILayout.EnumPopup(PcCompressionLabel, settings.compressionPc);
-        settings.compressionLinux = (TextureFormat)EditorGUILayout.EnumPopup(LinuxCompressionLabel, settings.compressionLinux);
         if (showToksvigHelp)
             EditorGUILayout.HelpBox(ToksvigHelpText, MessageType.Info);
         GUILayout.Space(20);
@@ -238,11 +236,9 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         {
             if (GUILayout.Button("Generate Mobile Variant (.mobile)"))
                 GenerateVariantMipMaps(settings.compressionMobile, ".mobile");
-            if (GUILayout.Button("Generate PC Variant (.pc)"))
-                GeneratePcVariant();
-            if (GUILayout.Button("Generate Linux Variant (.linux)"))
-                GenerateVariantMipMaps(settings.compressionLinux, ".linux");
-            if (GUILayout.Button("Generate All Variants"))
+            if (GUILayout.Button("Generate Standalone Variant (.standalone)"))
+                GenerateStandaloneVariant();
+            if (GUILayout.Button("Generate Both Variants"))
                 GenerateAllVariants();
         }
         EditorGUILayout.EndScrollView();
@@ -260,19 +256,18 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         CustomMipMapGeneratorGpu.Generate(sourceTexture, settings, shader, compression, suffix);
     }
 
-    private void GeneratePcVariant()
+    private void GenerateStandaloneVariant()
     {
         if (!TryGetShader(out var shader))
             return;
-        GenerateVariantMipMaps(shader, settings.compressionPc, ".pc");
+        GenerateVariantMipMaps(shader, settings.compressionPc, ".standalone");
     }
 
     private void GenerateAllVariants()
     {
         if (!TryGetShader(out var shader))
             return;
-        GenerateVariantMipMaps(shader, settings.compressionPc, ".pc");
-        GenerateVariantMipMaps(shader, settings.compressionLinux, ".linux");
+        GenerateVariantMipMaps(shader, settings.compressionPc, ".standalone");
         GenerateVariantMipMaps(shader, settings.compressionMobile, ".mobile");
     }
 
@@ -305,9 +300,7 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         if (!CompressionHasAlpha(settings.compressionMobile))
             missing.Add("Mobile");
         if (!CompressionHasAlpha(settings.compressionPc))
-            missing.Add("PC");
-        if (!CompressionHasAlpha(settings.compressionLinux))
-            missing.Add("Linux");
+            missing.Add("Standalone");
         if (missing.Count == 0)
             return null;
         return "Toksvig uses alpha. These variants drop alpha: " + string.Join(", ", missing) + ".";

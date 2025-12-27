@@ -62,15 +62,21 @@ float3 LinearToGamma(float3 c)
 
 float4 LoadSource(int2 coord)
 {
+    int2 c = coord;
+    float4 sample = 0.0;
     if (_UsePrev != 0)
     {
-        coord.x = clamp(coord.x, 0, _PrevWidth - 1);
-        coord.y = clamp(coord.y, 0, _PrevHeight - 1);
-        return _PrevTex.Load(int3(coord.x, coord.y, 0));
+        c.x = clamp(c.x, 0, _PrevWidth - 1);
+        c.y = clamp(c.y, 0, _PrevHeight - 1);
+        sample = _PrevTex.Load(int3(c.x, c.y, 0));
     }
-    coord.x = clamp(coord.x, 0, _SrcWidth - 1);
-    coord.y = clamp(coord.y, 0, _SrcHeight - 1);
-    return _SrcTex.Load(int3(coord.x, coord.y, 0));
+    else
+    {
+        c.x = clamp(c.x, 0, _SrcWidth - 1);
+        c.y = clamp(c.y, 0, _SrcHeight - 1);
+        sample = _SrcTex.Load(int3(c.x, c.y, 0));
+    }
+    return sample;
 }
 
 float4 LoadPrev(int2 coord)
