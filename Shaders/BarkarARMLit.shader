@@ -199,7 +199,7 @@ Shader "Barkar/ARMLit"
                 half4 n = SAMPLE_TEXTURE2D(_NormalMap, sampler_NormalMap, IN.uv);
                 half3 normalTS = UnpackNormalScale(n, _NormalMapScale);
                 half3x3 tangentToWorld = half3x3(litData.T.xyz, litData.B.xyz, litData.N.xyz);
-                litData.N = mul(normalTS, tangentToWorld);
+                litData.N = SafeNormalize(mul(normalTS, tangentToWorld));
 
                 #if defined (_USETOKSVIG)
                 float tok = saturate(n.a);
@@ -229,7 +229,7 @@ Shader "Barkar/ARMLit"
                 half3 indirectDiffuse = SAMPLE_GI(IN.lightmapUV, IN.SH, litData.N);
                 MixRealtimeAndBakedGI(mainLight, litData.N, indirectDiffuse);
                 half3 envPbr = EnvBRDF(litData, surfaceData, 0, IN.positionWS, indirectDiffuse);
-                half3 directPbr = StandardBRDF(litData, surfaceData, mainLight.direction, mainLight.color,
+                half3 directPbr = StandardBRDF_New(litData, surfaceData, mainLight.direction, mainLight.color,
                    mainLight.shadowAttenuation);
 
 
@@ -241,7 +241,7 @@ Shader "Barkar/ARMLit"
 
                 LIGHT_LOOP_BEGIN(lightCount)
                     Light addlight = GetAdditionalPerObjectLight(lightIndex, IN.positionWS);
-                    directPbr += StandardBRDF(litData, surfaceData, addlight.direction, addlight.color,
+                    directPbr += StandardBRDF_New(litData, surfaceData, addlight.direction, addlight.color,
                                    addlight.distanceAttenuation);
                 LIGHT_LOOP_END
 

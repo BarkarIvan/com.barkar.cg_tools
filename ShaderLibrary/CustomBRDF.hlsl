@@ -46,6 +46,13 @@ float Vis_SmithJointApprox(float a2, float NoV, float NoL)
     return 0.5 * rcp(Vis_SmithV + Vis_SmithL);
 }
 
+float Vis_SmithGGXCorrelated(float a2, float NoV, float NoL)
+{
+    float GGXV = NoL * sqrt(NoV * (NoV - NoV * a2) + a2);
+    float GGXL = NoV * sqrt(NoL * (NoL - NoL * a2) + a2);
+    return 0.5 * rcp(GGXV + GGXL);
+}
+
 //F
 float3 F_None(float3 SpecularColor)
 {
@@ -62,9 +69,23 @@ float3 F_Schlick_UE5(float3 SpecularColor, float VoH)
     return saturate(50.0 * SpecularColor.g) * Fc + (1 - Fc) * SpecularColor;
 }
 
+float3 F_Schlick_Another(float3 F0, float VoH)
+{
+    return F0 + (1 - F0) * Pow5(1 - VoH);
+}
+
 float3 Diffuse_Lambert(float3 DiffuseColor)
 {
     return DiffuseColor * (1 / PI);
+}
+
+float3 Diffuse_Burley(float3 albedo, float pr, float NoV, float NoL, float VoH)
+{
+    // pr = perceptual roughness (0..1)
+    float FD90 = 0.5 + 2.0 * pr * VoH * VoH;
+    float FdV  = 1.0 + (FD90 - 1.0) * Pow5(1.0 - NoV);
+    float FdL  = 1.0 + (FD90 - 1.0) * Pow5(1.0 - NoL);
+    return albedo * (FdV * FdL) * (1.0 / PI);
 }
 
 half3 EnvBRDFApprox(half3 SpecularColor, half Roughness, half NoV)
@@ -87,7 +108,7 @@ half3 EnvBRDFApprox(half3 SpecularColor, half Roughness, half NoV)
 float3 SpecularGGX(float a2, float3 specular, float NoH, float NoV, float NoL, float VoH)
 {
     float D = D_GGX_UE5(a2, NoH);
-    float Vis = Vis_SmithJointApprox(a2, NoV, NoL);
+    float Vis = Vis_SmithGGXCorrelated(a2, NoV, NoL);
     float3 F = F_Schlick_UE5(specular, VoH);
     return (D * Vis) * F;
 }
@@ -96,13 +117,16 @@ float3 SpecularGGX(float a2, float3 specular, float NoH, float NoV, float NoL, f
 half3 StandardBRDF(CustomLitData customLitData, CustomSurfaceData customSurfaceData, half3 L, half3 lightColor,
                    float shadow)
 {
-    float a2 = Pow4(customSurfaceData.roughness) + 0.001;
+    float pr = saturate(customSurfaceData.roughness);
+    pr = max(pr, 0.02);       // perceptual roughness
+    float alpha = pr * pr;    // linear roughness (α)
+    float a2 = alpha * alpha; // α²
 
     half3 H = normalize(customLitData.V + L);
     half NoH = saturate(dot(customLitData.N, H));
     half NoV = saturate(abs(dot(customLitData.N, customLitData.V)) + 1e-5);
     half NoL = saturate(dot(customLitData.N, L));
-    half VoH = saturate(dot(customLitData.V, H)); //LoH
+    half VoH = saturate(dot(customLitData.V, H)); 
     float3 radiance = NoL * lightColor * shadow * PI;
     float3 diffuseTerm = Diffuse_Lambert(customSurfaceData.albedo);
     float3 specularTerm = SpecularGGX(a2, customSurfaceData.specular, NoH, NoV, NoL, VoH);
@@ -132,5 +156,35 @@ half3 EnvBRDF(CustomLitData customLitData, CustomSurfaceData customSurfaceData, 
     float3 specularAO = GTAOMultiBounce(specularOcclusion, customSurfaceData.specular);
     float3 indirectSpecularTerm = specularLD * specularDFG * specularAO;
     return indirectDiffuseTerm + indirectSpecularTerm;
+}
+
+
+half3 StandardBRDF_New(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 lightColor, float shadow)
+{
+    float pr = saturate(sd.roughness);
+    pr = max(pr, 0.02);            // или меньше, если нужны “зеркала”
+
+    float alpha = max(pr * pr, 1e-4);
+    float a2    = alpha * alpha;
+
+    half3 H  = normalize(ld.V + L);
+    half NoH = saturate(dot(ld.N, H));
+    half NoV = saturate(abs(dot(ld.N, ld.V)) + 1e-5);
+    half NoL = saturate(dot(ld.N, L));
+    half VoH = saturate(dot(ld.V, H));
+
+    float3 radiance = NoL * lightColor * shadow; // я бы без *PI
+
+    // Spec
+    float  D   = D_GGX_UE5(a2, NoH);
+    float  Vis = Vis_SmithGGXCorrelated(a2, NoV, NoL);
+    float3 F   = F_Schlick(sd.specular, VoH);
+    float3 spec = (D * Vis) * F;
+
+    // Diffuse with energy conservation
+    float3 kD = (1.0 - F) * (1.0 - sd.metallic);
+    float3 diff = Diffuse_Burley(sd.albedo, pr, NoV, NoL, VoH);
+
+    return (diff * kD + spec) * radiance;
 }
 #endif
