@@ -181,7 +181,7 @@ half3 StandardBRDF_New(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 li
     float VoH = saturate(dot(ld.V, H));
     float LoH = saturate(dot(H, L));
 
-    float3 radiance = lightColor * atten * PI;
+    float3 radiance = lightColor * atten * PI; //PI для системы освещения Юнити
 
     float  spec = SpecularGGX(a2, sd.specular, NoH, NoV, NoL, VoH);//D_GGX_UE5(a2, NoH);
     float3 diff = Diffuse_Burley(sd.albedo, pr, NoV, NoL, LoH);
