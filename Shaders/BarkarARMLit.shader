@@ -67,11 +67,13 @@ Shader "Barkar/ARMLit"
             #pragma multi_compile_fragment _ LOD_FADE_CROSSFADE
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
             #pragma multi_compile _ _ADDITIONAL_LIGHTS
+            #pragma multi_compile _ EVALUATE_SH_MIXED EVALUATE_SH_VERTE
+            // #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
             #pragma multi_compile _ DIRLIGHTMAP_COMBINED
-               #pragma multi_compile_fragment _ _REFLECTION_PROBE_BLENDING
+            #pragma multi_compile_fragment _ _REFLECTION_PROBE_BLENDING
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_BOX_PROJECTION
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_ATLAS
-            
+            #pragma multi_compile _ LOD_FADE_CROSSFADE
             #pragma multi_compile _ LIGHTMAP_ON
             #pragma multi_compile_fog
 
@@ -154,7 +156,7 @@ Shader "Barkar/ARMLit"
                 OUT.color = IN.color;
                 OUT.screenPos = positionInputs.positionNDC;
                 OUTPUT_LIGHTMAP_UV(IN.lightmapUV, unity_LightmapST, OUT.lightmapUV);
-                OUTPUT_SH(OUT.normalWS, OUT.SH); //vertex SH
+                    OUTPUT_SH(OUT.normalWS, OUT.SH); //vertex SH
 
                 return OUT;
             }
@@ -175,11 +177,10 @@ Shader "Barkar/ARMLit"
                 surfaceData.occlusion = 1.0;
 
                 CustomLitData litData;
-
                 litData.V = normalize(_WorldSpaceCameraPos - IN.positionWS);
                 litData.positionWS = IN.positionWS;
-                litData.T = (IN.tangentWS.xyz);
-                litData.N = normalize(IN.normalWS);
+                litData.T = SafeNormalize(IN.tangentWS.xyz);
+                litData.N = SafeNormalize(IN.normalWS);
                 half sgn = IN.tangentWS.w;
                 litData.B = sgn * cross(litData.N.xyz, litData.T.xyz);;
 
@@ -226,10 +227,11 @@ Shader "Barkar/ARMLit"
                 Light mainLight = GetMainLight(TransformWorldToShadowCoord(IN.positionWS));
 
                 half3 indirectDiffuse = SAMPLE_GI(IN.lightmapUV, IN.SH, litData.N);
+
                 MixRealtimeAndBakedGI(mainLight, litData.N, indirectDiffuse);
                 half3 envPbr = EnvBRDF(litData, surfaceData, 0, IN.positionWS, indirectDiffuse);
                 half3 directPbr = StandardBRDF_New(litData, surfaceData, mainLight.direction, mainLight.color,
-                   mainLight.shadowAttenuation);
+                                                                   mainLight.shadowAttenuation);
 
 
                 //TODO Forward +
@@ -241,7 +243,7 @@ Shader "Barkar/ARMLit"
                 LIGHT_LOOP_BEGIN(lightCount)
                     Light addlight = GetAdditionalPerObjectLight(lightIndex, IN.positionWS);
                     directPbr += StandardBRDF_New(litData, surfaceData, addlight.direction, addlight.color,
-                                   addlight.distanceAttenuation);
+      addlight.distanceAttenuation);
                 LIGHT_LOOP_END
 
 
