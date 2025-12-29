@@ -64,7 +64,7 @@ Shader "Barkar/ARMLit"
             #pragma shader_feature_local _ADDITIONALMAP
             #pragma shader_feature_fragment _EMISSION
             #pragma shader_feature_fragment _USEALPHACLIP
-            #pragma multi_compile_fragment _ LOD_FADE_CROSSFADE
+
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
             #pragma multi_compile _ _ADDITIONAL_LIGHTS
             #pragma multi_compile _ EVALUATE_SH_MIXED EVALUATE_SH_VERTE

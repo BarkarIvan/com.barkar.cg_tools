@@ -88,10 +88,10 @@ float3 Diffuse_Lambert(float3 DiffuseColor)
     return DiffuseColor * (1 / PI);
 }
 
-float3 Diffuse_Burley(float3 albedo, float pr, float NoV, float NoL, float VoH)
+float3 Diffuse_Burley(float3 albedo, float pr, float NoV, float NoL, float LoH)
 {
     // pr = perceptual roughness (0..1)
-    float FD90 = 0.5 + 2.0 * pr * VoH * VoH;
+    float FD90 = 0.5 + 2.0 * pr * LoH * LoH;
     float FdV  = 1.0 + (FD90 - 1.0) * Pow5(1.0 - NoV);
     float FdL  = 1.0 + (FD90 - 1.0) * Pow5(1.0 - NoL);
     return albedo * (FdV * FdL) * (1.0 / PI);
@@ -145,69 +145,49 @@ half3 EnvBRDF(CustomLitData ld, CustomSurfaceData sd, float envRotation, float3 
     float3 V = ld.V;
 
     float NoV = saturate(dot(N, V));
-    float pr = saturate(sd.roughness); // perceptual roughness
+    float pr  = sd.roughness;
 
     float3 R = reflect(-V, N);
 
-    
-   // float3 Fd = F_Schlick_Another(sd.specular, NoV);
-    float3 kD = 1.0 - sd.specular;
+    // Diffuse IBL
+    float3 diffuseAO         = GTAOMultiBounce(sd.occlusion, sd.albedo);
+    float3 indirectDiffuseTerm = indirectDiffuse * sd.albedo * diffuseAO;
 
-    float3 diffuseAO = GTAOMultiBounce(sd.occlusion, sd.albedo);
-    float3 indirectDiffuseTerm = indirectDiffuse * sd.albedo * kD * diffuseAO;
+    // Specular IBL
+    half3  specularLD   = GlossyEnvironmentReflection(R, positionWS, pr, 1.0);
+    half3  specularDFG  = EnvBRDFSpecular_GGX(sd.specular, pr, NoV); // kS-like term
+    float  specOcc      = GetSpecularOcclusionFromAmbientOcclusion(NoV, sd.occlusion, pr);
+    float3 specAO       = GTAOMultiBounce(specOcc, sd.specular);
+    float3 indirectSpec = specularLD * specularDFG * specAO;
     
-    half3 specularLD = GlossyEnvironmentReflection(R, positionWS, pr, 1.0);
-    
-    half3 specularDFG = EnvBRDFSpecular_GGX(sd.specular, pr, NoV);
-
-    float specOcc = GetSpecularOcclusionFromAmbientOcclusion(NoV, sd.occlusion, pr);
-
-    
-     float3 specAO = GTAOMultiBounce(specOcc, sd.specular);
-     float3 indirectSpecularTerm = specularLD * specularDFG * specAO;
-
-    return indirectDiffuseTerm + indirectSpecularTerm;
+    float3 kD = (1.0 - sd.metallic);
+    return indirectDiffuseTerm * kD + indirectSpec;
 }
 
-half3 StandardBRDF(CustomLitData customLitData, CustomSurfaceData customSurfaceData, half3 L, half3 lightColor,
-                   float shadow)
-{
-    float pr = saturate(customSurfaceData.roughness);
-    pr = max(pr, 0.02);       // perceptual roughness
-    float alpha = pr * pr;    // linear roughness (α)
-    float a2 = alpha * alpha; // α²
-
-    half3 H = normalize(customLitData.V + L);
-    half NoH = saturate(dot(customLitData.N, H));
-    half NoV = saturate(abs(dot(customLitData.N, customLitData.V)) + 1e-5);
-    half NoL = saturate(dot(customLitData.N, L));
-    half VoH = saturate(dot(customLitData.V, H)); 
-    float3 radiance = NoL * lightColor * shadow * PI;
-    float3 diffuseTerm = Diffuse_Lambert(customSurfaceData.albedo);
-    float3 specularTerm = SpecularGGX(a2, customSurfaceData.specular, NoH, NoV, NoL, VoH);
-    return (diffuseTerm + specularTerm) * radiance;
-}
 half3 StandardBRDF_New(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 lightColor, float atten)
 {
     float pr    = saturate(sd.roughness);
-    pr = max(pr, 0.02);            // чтобы блик не исчезал (alias)
-    float a2 = max(pr * pr, 1e-4);
+    pr = max(pr, 0.02);
+    float alpha = pr * pr;      
+    float a2    = max(alpha * alpha, 1e-8); // α²
+    
 
     float NoL = saturate(dot(ld.N, L));
     float NoV = saturate(abs(dot(ld.N, ld.V)) + 1e-5); /// или нормаль глянуть
-    if (NoL <= 0 || NoV <= 0) return 0;
+
 
     float3 H  = normalize(ld.V + L);
     float NoH = saturate(dot(ld.N, H));
     float VoH = saturate(dot(ld.V, H));
+    float LoH = saturate(dot(H, L));
 
-    float3 radiance = lightColor * atten * NoL;
+    float3 radiance = lightColor * atten * PI;
 
     float  spec = SpecularGGX(a2, sd.specular, NoH, NoV, NoL, VoH);//D_GGX_UE5(a2, NoH);
-    float3 diff = Diffuse_Burley(sd.albedo, pr, NoV, NoL, VoH);
-    //float3 Fd = F_Schlick_Another(sd.specular, NoV);
-    float3 kD = (1.0 - sd.specular) ;
+    float3 diff = Diffuse_Burley(sd.albedo, pr, NoV, NoL, LoH);
+    float3 F = F_Schlick_2(sd.specular, VoH);    
+    float3 kD = (1.0 - F) * (1.0 - sd.metallic);
 
-    return (diff * kD + spec) * radiance;
+    return (diff * kD + spec) * radiance * NoL;
 }
 #endif
