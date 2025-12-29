@@ -142,31 +142,53 @@ half3 StandardBRDF(CustomLitData customLitData, CustomSurfaceData customSurfaceD
     return (diffuseTerm + specularTerm) * radiance;
 }
 
-half3 EnvBRDF(CustomLitData customLitData, CustomSurfaceData customSurfaceData, float envRotation, float3 positionWS,
-              half3 indirectDiffuse)
+float2 EnvBRDFApproxAB_GGX(float perceptualRoughness, float NoV)
 {
-    
-    half3 R = reflect(-customLitData.V, customLitData.N);
-    float NoV = saturate(dot(customLitData.N, customLitData.V));
-    float3 Fd = F_Schlick_Another(customSurfaceData.specular, NoV);
-    float3 kD = (1.0 - Fd);
+    // Karis/Lazarov approx (UE4), works well with correlated GGX
+    const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
+    const float4 c1 = float4( 1.0,  0.0425,  1.04, -0.04);
 
-    float3 diffuseAO = GTAOMultiBounce(customSurfaceData.occlusion, customSurfaceData.albedo);
-    float3 indirectDiffuseTerm = indirectDiffuse * customSurfaceData.albedo * kD * diffuseAO;
-    //IBL
-    //The Split Sum: 1nd Stage
-    half3 specularLD = GlossyEnvironmentReflection(R, positionWS, customSurfaceData.roughness,
-                                                   1.0);
-    //The Split Sum: 2nd Stage
-    half3 specularDFG = EnvBRDFApprox(customSurfaceData.specular, customSurfaceData.roughness, NoV);
-    //AO
-    float specularOcclusion = GetSpecularOcclusionFromAmbientOcclusion(NoV, customSurfaceData.occlusion,
-                                                                       customSurfaceData.roughness);
-    float3 specularAO = GTAOMultiBounce(specularOcclusion, customSurfaceData.specular);
-    float3 indirectSpecularTerm = specularLD * specularDFG * specularAO;
-    return indirectDiffuseTerm + indirectSpecularTerm;
+    float4 r = perceptualRoughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NoV)) * r.x + r.y;
+    return float2(-1.04, 1.04) * a004 + r.zw;
 }
 
+float3 EnvBRDFSpecular_GGX(float3 F0, float perceptualRoughness, float NoV)
+{
+    float2 AB = EnvBRDFApproxAB_GGX(perceptualRoughness, NoV);
+    return F0 * AB.x + AB.y;
+}
+half3 EnvBRDF(CustomLitData ld, CustomSurfaceData sd, float envRotation, float3 positionWS, half3 indirectDiffuse)
+{
+    float3 N = ld.N;
+    float3 V = ld.V;
+
+    float NoV = saturate(dot(N, V));
+    float pr = saturate(sd.roughness); // perceptual roughness
+
+    float3 R = reflect(-V, N);
+
+    // diffuse energy split (у тебя albedo уже прибито metallic-ом, так что без (1-metallic))
+    float3 Fd = F_Schlick_2(sd.specular, NoV);
+    float3 kD = 1.0 - sd.specular;
+
+    float3 diffuseAO = GTAOMultiBounce(sd.occlusion, sd.albedo);
+    float3 indirectDiffuseTerm = indirectDiffuse * sd.albedo * kD * diffuseAO;
+
+    // IMPORTANT: не передавай occlusion сюда, если потом домножаешь specAO
+    half3 specularLD = GlossyEnvironmentReflection(R, positionWS, pr, 1.0);
+
+    // DFG под correlated GGX
+    half3 specularDFG = EnvBRDFSpecular_GGX(sd.specular, pr, NoV);
+
+    float specOcc = GetSpecularOcclusionFromAmbientOcclusion(NoV, sd.occlusion, pr);
+
+    
+     float3 specAO = GTAOMultiBounce(specOcc, sd.specular);
+     float3 indirectSpecularTerm = specularLD * specularDFG * specAO;
+
+    return indirectDiffuseTerm + indirectSpecularTerm;
+}
 
 half3 StandardBRDF_New(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 lightColor, float atten)
 {
@@ -175,10 +197,13 @@ half3 StandardBRDF_New(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 li
     float a2    = alpha * alpha;
 
     float NoL = saturate(dot(ld.N, L));
-    float NoV = saturate(dot(ld.N, ld.V));
+    float NoV = saturate(abs(dot(ld.N, ld.V)) + 1e-5); /// или нормаль глянуть
     if (NoL <= 0 || NoV <= 0) return 0;
 
     float3 H  = normalize(ld.V + L);
+    //float3 H = ld.V + L;
+   // float h2 = dot(H, H);
+   // H = (h2 > 1e-8) ? (H * rsqrt(h2)) : ld.N;
     float NoH = saturate(dot(ld.N, H));
     float VoH = saturate(dot(ld.V, H));
 
@@ -193,10 +218,8 @@ half3 StandardBRDF_New(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 li
 
     // Diffuse (sd.albedo у тебя уже “diffuseColor”, т.к. ты гасишь её metallic-ом выше)
     float3 diff = Diffuse_Burley(sd.albedo, pr, NoV, NoL, VoH);
-
-    // Energy split: лучше по NoV
-    float3 Fd = F_Schlick_Another(sd.specular, NoV);
-    float3 kD = (1.0 - Fd); // !!! без (1 - metallic), т.к. он уже в sd.albedo
+   
+    float3 kD = (1.0 - sd.specular) ;
 
     return (diff * kD + spec) * radiance;
 }

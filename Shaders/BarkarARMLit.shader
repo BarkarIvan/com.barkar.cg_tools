@@ -117,8 +117,8 @@ Shader "Barkar/ARMLit"
             struct Attributes
             {
                 float3 positionOS : POSITION;
-                half3 normalOS : NORMAL;
-                half4 tangentOS : TANGENT;
+                float3 normalOS : NORMAL;
+                float4 tangentOS : TANGENT;
                 float2 uv : TEXCOORD0;
                 float2 lightmapUV : TEXCOORD1;
                 half4 color : COLOR;
@@ -130,8 +130,8 @@ Shader "Barkar/ARMLit"
                 float4 positionCS : SV_POSITION;
                 float2 uv : TEXCOORD0;
                 float3 positionWS : TEXCOORD1;
-                half3 normalWS : NORMAL;
-                half4 tangentWS : TEXCOORD2;
+                float3 normalWS : NORMAL;
+                float4 tangentWS : TEXCOORD2;
                 DECLARE_LIGHTMAP_OR_SH(lightmapUV, SH, 5);
                 float4 screenPos : TEXCOORD6;
                 half4 color : COLOR;
