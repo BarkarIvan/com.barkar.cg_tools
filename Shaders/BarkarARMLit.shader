@@ -248,11 +248,8 @@ Shader "Barkar/ARMLit"
 
 
                 #endif
-
-
+                
                 result.rgb = directPbr + envPbr; //saturate only for Metal api?
-                result.a = surfaceData.alpha;
-
                 //Emission
                 half3 emissionColor = _EmissionColor.rgb;
                 #if defined(_EMISSION)

@@ -85,7 +85,7 @@ float3 F_Schlick_2(float3 F0, float cosTheta)
 
 float3 Diffuse_Lambert(float3 DiffuseColor)
 {
-    return DiffuseColor * (1 / PI);
+    return DiffuseColor * INV_PI;
 }
 
 float3 Diffuse_Burley(float3 albedo, float pr, float NoV, float NoL, float LoH)
@@ -94,7 +94,7 @@ float3 Diffuse_Burley(float3 albedo, float pr, float NoV, float NoL, float LoH)
     float FD90 = 0.5 + 2.0 * pr * LoH * LoH;
     float FdV  = 1.0 + (FD90 - 1.0) * Pow5(1.0 - NoV);
     float FdL  = 1.0 + (FD90 - 1.0) * Pow5(1.0 - NoL);
-    return albedo * (FdV * FdL) * (1.0 / PI);
+    return albedo * (FdV * FdL) * INV_PI;
 }
 
 half3 EnvBRDFApprox(half3 SpecularColor, half Roughness, half NoV)
@@ -118,7 +118,7 @@ float3 SpecularGGX(float a2, float3 specular, float NoH, float NoV, float NoL, f
 {
     float D = D_GGX_UE5(a2, NoH);
     float Vis = Vis_SmithGGXCorrelated(a2, NoV, NoL);
-    float3 F = F_Schlick_2(specular, VoH);
+    float3 F = F_Schlick_Another(specular, VoH);
     return (D * Vis) * F;
 }
 
@@ -144,14 +144,14 @@ half3 EnvBRDF(CustomLitData ld, CustomSurfaceData sd, float envRotation, float3 
     float3 N = ld.N;
     float3 V = ld.V;
 
-    float NoV = saturate(dot(N, V));
+    float NoV = saturate(abs(dot(N, V))+ 1e-5);;
     float pr  = sd.roughness;
 
     float3 R = reflect(-V, N);
 
     // Diffuse IBL
     float3 diffuseAO         = GTAOMultiBounce(sd.occlusion, sd.albedo);
-    float3 indirectDiffuseTerm = indirectDiffuse * sd.albedo * diffuseAO;
+    float3 indirectDiffuseTerm = (indirectDiffuse ) * sd.albedo * diffuseAO;
 
     // Specular IBL
     half3  specularLD   = GlossyEnvironmentReflection(R, positionWS, pr, 1.0);
@@ -169,25 +169,21 @@ half3 StandardBRDF_New(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 li
     float pr    = saturate(sd.roughness);
     pr = max(pr, 0.02);
     float alpha = pr * pr;      
-    float a2    = max(alpha * alpha, 1e-8); // α²
+    float a2 = max(alpha * alpha, 1e-8); // α²
     
-
     float NoL = saturate(dot(ld.N, L));
     float NoV = saturate(abs(dot(ld.N, ld.V)) + 1e-5); /// или нормаль глянуть
 
-
-    float3 H  = normalize(ld.V + L);
+    float3 H  = SafeNormalize(ld.V + L);
     float NoH = saturate(dot(ld.N, H));
     float VoH = saturate(dot(ld.V, H));
-    float LoH = saturate(dot(H, L));
-
-    float3 radiance = lightColor * atten * PI; //PI для системы освещения Юнити
-
-    float  spec = SpecularGGX(a2, sd.specular, NoH, NoV, NoL, VoH);//D_GGX_UE5(a2, NoH);
+    float3 radiance = lightColor * atten; 
+    float LoH = saturate(dot(L, H));
+    float3  spec = SpecularGGX(a2, sd.specular, NoH, NoV, NoL, VoH);
     float3 diff = Diffuse_Burley(sd.albedo, pr, NoV, NoL, LoH);
-    float3 F = F_Schlick_2(sd.specular, VoH);    
+    float3 F = F_Schlick_Another(sd.specular, VoH);    
     float3 kD = (1.0 - F) * (1.0 - sd.metallic);
 
-    return (diff * kD + spec) * radiance * NoL;
+    return (diff * kD) * (radiance * PI) * NoL + spec * radiance * NoL;
 }
 #endif
