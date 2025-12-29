@@ -165,13 +165,12 @@ Shader "Barkar/ARMLit"
                 half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
                 albedo *= _BaseColor;
                 //albedo *= IN.color;
-                albedo *= _Brightness;
 
 
                 CustomSurfaceData surfaceData;
                 surfaceData.metallic = _Metallic;
                 surfaceData.roughness = _Roughness;
-                surfaceData.albedo = albedo.rgb;
+                surfaceData.albedo = albedo.rgb * _Brightness;
                 surfaceData.alpha = albedo.a;
                 surfaceData.occlusion = 1.0;
 
@@ -249,7 +248,7 @@ Shader "Barkar/ARMLit"
                 #endif
 
 
-                result.rgb = saturate(directPbr) + envPbr; //saturate only for Metal api?
+                result.rgb = directPbr + envPbr; //saturate only for Metal api?
                 result.a = surfaceData.alpha;
 
                 //Emission
