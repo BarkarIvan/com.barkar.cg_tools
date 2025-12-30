@@ -9,6 +9,8 @@ public class BarkarARMLitShaderEditor : BaseShaderGUI
     private MaterialProperty _BaseMap;
     private MaterialProperty _BaseColor;
     private MaterialProperty _AdditionalMap;
+    private MaterialProperty _GltfBrdfLut;
+    private MaterialProperty _OcclusionStrength;
     private MaterialProperty _NormalMap;
     private MaterialProperty _NormalMapScale;
     private MaterialProperty _Metallic;
@@ -83,6 +85,8 @@ public class BarkarARMLitShaderEditor : BaseShaderGUI
 
             EditorGUILayout.HelpBox("ARM (AO, Roughness, Metallic)", MessageType.None);
             materialEditor.TextureProperty(_AdditionalMap, "ARM Map");
+            materialEditor.TextureProperty(_GltfBrdfLut, "GLTF BRDF LUT");
+            materialEditor.ShaderProperty(_OcclusionStrength, "Occlusion Strength");
             EditorGUILayout.Space(30);
             
             
@@ -206,6 +210,8 @@ public class BarkarARMLitShaderEditor : BaseShaderGUI
         _BaseMap = FindProperty("_BaseMap");
         _BaseColor = FindProperty("_BaseColor");
         _AdditionalMap = FindProperty("_AdditionalMap");
+        _GltfBrdfLut = FindProperty("_GltfBrdfLut");
+        _OcclusionStrength = FindProperty("_OcclusionStrength");
         _UseToksvig  = FindProperty("_UseToksvig");
         _ToksvigStrength  = FindProperty("_ToksvigStrength");
         _NormalMap = FindProperty("_NormalMap");

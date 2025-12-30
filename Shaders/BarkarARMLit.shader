@@ -7,6 +7,8 @@ Shader "Barkar/ARMLit"
         _BaseColor ("Color", Color) = (1,1,1,1)
 
         _AdditionalMap ("ARM Map", 2D) = "white"{}
+        [NoScaleOffset] _GltfBrdfLut ("GLTF BRDF LUT", 2D) = "white"{}
+        _OcclusionStrength ("Occlusion Strength", Range(0,1)) = 1.0
 
         _NormalMap ("Normal Map", 2D) = "gray"{}
         [Toggle(_USETOGSVIK)] _UseToksvig ("Use Toksvig", Float) = 0
@@ -108,6 +110,7 @@ Shader "Barkar/ARMLit"
                 half _Brightness;
                 half _Metallic;
                 half _Roughness;
+                half _OcclusionStrength;
                 half _Cutoff;
                 half _NormalMapScale;
                 half _ToksvigStrength;
@@ -189,9 +192,9 @@ Shader "Barkar/ARMLit"
                 half4 additionalMaps = SAMPLE_TEXTURE2D(_AdditionalMap, sampler_AdditionalMap, IN.uv);
                 half roughnessMask = additionalMaps.g;
                 half metallicMask = additionalMaps.b;
-                surfaceData.metallic = metallicMask;
-                surfaceData.roughness = roughnessMask;
-                surfaceData.occlusion = additionalMaps.r;
+                surfaceData.metallic = metallicMask * _Metallic;
+                surfaceData.roughness = roughnessMask * _Roughness;
+                surfaceData.occlusion = lerp(1.0, additionalMaps.r, _OcclusionStrength);
                 #endif
 
                 //normal map
@@ -216,8 +219,7 @@ Shader "Barkar/ARMLit"
 
                 #endif
 
-                surfaceData.albedo = lerp(surfaceData.albedo, float3(0.0, 0.0, 0.0), surfaceData.metallic);
-                surfaceData.specular = lerp(kDielectricSpec.rgb, albedo.rgb, surfaceData.metallic);
+                surfaceData.specular = lerp(kDielectricSpec.rgb, surfaceData.albedo, surfaceData.metallic);
 
 
                 #if defined (_USEALPHACLIP)

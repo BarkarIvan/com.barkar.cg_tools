@@ -3,6 +3,9 @@
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl"
 
+TEXTURE2D(_GltfBrdfLut);
+SAMPLER(sampler_GltfBrdfLut);
+
 float Pow5(float x)
 {
     float x2 = x * x;
@@ -21,66 +24,48 @@ half3 RotateDirection(half3 R, half degrees)
 }
 
 //BRDF
-//Based on https://github.com/Nuomi-Chobits/Unity-URP-PBR/tree/main
+//Based on https://github.com/KhronosGroup/glTF-Sample-Renderer/tree/main/source/Renderer/shaders
 
 //D
 // GGX / Trowbridge-Reitz
 // [Walter et al. 2007, "Microfacet models for refraction through rough surfaces"]
-float D_GGX_UE5(float a2, float NoH)
+float Gltf_D_GGX(float NoH, float alphaRoughness)
 {
-    float d = (NoH * a2 - NoH) * NoH + 1; // 2 mad
-    return a2 / (PI * d * d); // 4 mul, 1 rcp
+    float alphaRoughnessSq = alphaRoughness * alphaRoughness;
+    float f = (NoH * NoH) * (alphaRoughnessSq - 1.0) + 1.0;
+    return alphaRoughnessSq / (PI * f * f);
 }
 
 //Vis
-float Vis_Implicit()
-{
-    return 0.25;
-}
-
-// Appoximation of joint Smith term for GGX
+// Smith Joint GGX, correlated
 // [Heitz 2014, "Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs"]
-float Vis_SmithJointApprox(float a2, float NoV, float NoL)
+float Gltf_V_GGX(float NoL, float NoV, float alphaRoughness)
 {
-    float a = sqrt(a2);
-    float Vis_SmithV = NoL * (NoV * (1 - a) + a);
-    float Vis_SmithL = NoV * (NoL * (1 - a) + a);
-    return 0.5 * rcp(Vis_SmithV + Vis_SmithL);
-}
-
-float Vis_SmithGGXCorrelated(float a2, float NoV, float NoL)
-{
-    float tV = max(NoV * NoV * (1.0 - a2) + a2, 0.0);
-    float tL = max(NoL * NoL * (1.0 - a2) + a2, 0.0);
-    float GGXV = NoL * sqrt(tV);
-    float GGXL = NoV * sqrt(tL);
-    return 0.5 * rcp(GGXV + GGXL);
+    float alphaRoughnessSq = alphaRoughness * alphaRoughness;
+    float GGXV = NoL * sqrt(NoV * NoV * (1.0 - alphaRoughnessSq) + alphaRoughnessSq);
+    float GGXL = NoV * sqrt(NoL * NoL * (1.0 - alphaRoughnessSq) + alphaRoughnessSq);
+    float GGX = GGXV + GGXL;
+    return (GGX > 0.0) ? (0.5 / GGX) : 0.0;
 }
 
 //F
-float3 F_None(float3 SpecularColor)
+float3 Gltf_F_None(float3 SpecularColor)
 {
     return SpecularColor;
 }
 
 // [Schlick 1994, "An Inexpensive BRDF Model for Physically-Based Rendering"]
-float3 F_Schlick_UE5(float3 SpecularColor, float VoH)
+float3 Gltf_F_Schlick(float3 f0, float3 f90, float VoH)
 {
-    float Fc = Pow5(1 - VoH); // 1 sub, 3 mul
-    //return Fc + (1 - Fc) * SpecularColor;		// 1 add, 3 mad
-
-    // Anything less than 2% is physically impossible and is instead considered to be shadowing
-    return saturate(50.0 * SpecularColor.g) * Fc + (1 - Fc) * SpecularColor;
+    float x = saturate(1.0 - VoH);
+    float x2 = x * x;
+    float x5 = x * x2 * x2;
+    return f0 + (f90 - f0) * x5;
 }
 
-float3 F_Schlick_Another(float3 F0, float VoH)
+float3 Gltf_F_Schlick(float3 f0, float VoH)
 {
-    return F0 + (1 - F0) * Pow5(1 - VoH);
-}
-
-float3 F_Schlick_2(float3 F0, float cosTheta)
-{
-    return F0 + (1.0 - F0) * Pow5(1.0 - cosTheta);
+    return Gltf_F_Schlick(f0, 1.0, VoH);
 }
 
 float3 Diffuse_Lambert(float3 DiffuseColor)
@@ -114,12 +99,31 @@ half3 EnvBRDFApprox(half3 SpecularColor, half Roughness, half NoV)
     return SpecularColor * AB.x + AB.y;
 }
 
-float3 SpecularGGX(float a2, float3 specular, float NoH, float NoV, float NoL, float VoH)
+float3 Gltf_SpecularGGX(float alphaRoughness, float NoH, float NoV, float NoL)
 {
-    float D = D_GGX_UE5(a2, NoH);
-    float Vis = Vis_SmithGGXCorrelated(a2, NoV, NoL);
-    float3 F = F_Schlick_Another(specular, VoH);
-    return (D * Vis) * F;
+    float D = Gltf_D_GGX(NoH, alphaRoughness);
+    float Vis = Gltf_V_GGX(NoL, NoV, alphaRoughness);
+    return float3(D * Vis, D * Vis, D * Vis);
+}
+
+float2 Gltf_SampleGGXLUT(float NoV, float perceptualRoughness)
+{
+    float2 uv = saturate(float2(NoV, perceptualRoughness));
+    return SAMPLE_TEXTURE2D(_GltfBrdfLut, sampler_GltfBrdfLut, uv).rg;
+}
+
+float3 Gltf_GetIBLGGXFresnel(float NoV, float perceptualRoughness, float3 F0, float specularWeight)
+{
+    float2 f_ab = Gltf_SampleGGXLUT(NoV, perceptualRoughness);
+    float3 Fr = max(float3(1.0 - perceptualRoughness, 1.0 - perceptualRoughness, 1.0 - perceptualRoughness), F0) - F0;
+    float3 k_S = F0 + Fr * Pow5(1.0 - NoV);
+    float3 FssEss = specularWeight * (k_S * f_ab.x + f_ab.y);
+
+    float Ems = 1.0 - (f_ab.x + f_ab.y);
+    float3 F_avg = specularWeight * (F0 + (1.0 - F0) / 21.0);
+    float3 FmsEms = Ems * FssEss * F_avg / max(1.0 - F_avg * Ems, 1e-5);
+
+    return FssEss + FmsEms;
 }
 
 
@@ -145,31 +149,32 @@ half3 EnvBRDF(CustomLitData ld, CustomSurfaceData sd, float envRotation, float3 
     float3 V = ld.V;
 
     float NoV = saturate(abs(dot(N, V))+ 1e-5);;
-    float pr  = sd.roughness;
+    float pr  = saturate(sd.roughness);
 
     float3 R = reflect(-V, N);
 
     // Diffuse IBL
-    float3 diffuseAO         = GTAOMultiBounce(sd.occlusion, sd.albedo);
-    float3 indirectDiffuseTerm = (indirectDiffuse ) * sd.albedo * diffuseAO;
+    float3 diffuseAO           = GTAOMultiBounce(sd.occlusion, sd.albedo);
+    float3 indirectDiffuseTerm = indirectDiffuse * sd.albedo * diffuseAO;
 
     // Specular IBL
     half3  specularLD   = GlossyEnvironmentReflection(R, positionWS, pr, 1.0);
-    half3  specularDFG  = EnvBRDFSpecular_GGX(sd.specular, pr, NoV); // kS-like term
     float  specOcc      = GetSpecularOcclusionFromAmbientOcclusion(NoV, sd.occlusion, pr);
     float3 specAO       = GTAOMultiBounce(specOcc, sd.specular);
-    float3 indirectSpec = specularLD * specularDFG * specAO;
-    
-    float3 kD = (1.0 - sd.metallic);
-    return indirectDiffuseTerm * kD + indirectSpec;
+    float3 specularTerm = specularLD * specAO;
+    float3 fresnelMetal = Gltf_GetIBLGGXFresnel(NoV, pr, sd.albedo, 1.0);
+    float3 fresnelDiel  = Gltf_GetIBLGGXFresnel(NoV, pr, kDielectricSpec.rgb, 1.0);
+
+    float3 dielectricIBL = lerp(indirectDiffuseTerm, specularTerm, fresnelDiel);
+    float3 metalIBL      = specularTerm * fresnelMetal;
+
+    return lerp(dielectricIBL, metalIBL, sd.metallic);
 }
 
 half3 StandardBRDF_New(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 lightColor, float atten)
 {
-    float pr    = saturate(sd.roughness);
-    pr = max(pr, 0.02);
-    float alpha = pr * pr;      
-    float a2 = max(alpha * alpha, 1e-8); // α²
+    float pr = saturate(sd.roughness);
+    float alphaRoughness = pr * pr;
     
     float NoL = saturate(dot(ld.N, L));
     float NoV = saturate(abs(dot(ld.N, ld.V)) + 1e-5); /// или нормаль глянуть
@@ -178,12 +183,14 @@ half3 StandardBRDF_New(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 li
     float NoH = saturate(dot(ld.N, H));
     float VoH = saturate(dot(ld.V, H));
     float3 radiance = lightColor * atten; 
-    float LoH = saturate(dot(L, H));
-    float3  spec = SpecularGGX(a2, sd.specular, NoH, NoV, NoL, VoH);
-    float3 diff = Diffuse_Burley(sd.albedo, pr, NoV, NoL, LoH);
-    float3 F = F_Schlick_Another(sd.specular, VoH);    
-    float3 kD = (1.0 - F) * (1.0 - sd.metallic);
+    float3 specDVis = Gltf_SpecularGGX(alphaRoughness, NoH, NoV, NoL);
+    float3 diff = Diffuse_Lambert(sd.albedo);
+    float3 dielectricF = Gltf_F_Schlick(kDielectricSpec.rgb, abs(VoH));
+    float3 metalF = Gltf_F_Schlick(sd.albedo, abs(VoH));
+    float3 dielectricBrdf = lerp(diff, specDVis, dielectricF);
+    float3 metalBrdf = metalF * specDVis;
+    float3 color = lerp(dielectricBrdf, metalBrdf, sd.metallic);
 
-    return (diff * kD) * (radiance * PI) * NoL + spec * radiance * NoL;
+    return color * radiance * NoL;
 }
 #endif

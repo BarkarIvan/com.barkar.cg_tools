@@ -54,15 +54,15 @@ half4 MetaPassFragment(Varyings IN) : SV_TARGET
     //additional map
     #if defined (_ADDITIONALMAP)
     half4 additionalMaps = SAMPLE_TEXTURE2D(_AdditionalMap, sampler_AdditionalMap, IN.uv);
-    half smoothnessMask = additionalMaps.b;
-    half metallicMask = additionalMaps.a;
-    surfaceData.metallic = metallicMask;
-    surfaceData.roughness = smoothnessMask;
+    half roughnessMask = additionalMaps.g;
+    half metallicMask = additionalMaps.b;
+    surfaceData.metallic = metallicMask * _Metallic;
+    surfaceData.roughness = roughnessMask * _Roughness;
     
     #endif
     
-    surfaceData.albedo = albedo.rgb;//lerp(surfaceData.albedo, float3(0.0, 0.0, 0.0), surfaceData.metallic);
-    surfaceData.specular = lerp(kDielectricSpec.rgb, albedo.rgb, surfaceData.metallic);
+    surfaceData.albedo = albedo.rgb;
+    surfaceData.specular = lerp(kDielectricSpec.rgb, surfaceData.albedo, surfaceData.metallic);
 
     // TODO alpha
     //  #if defined (_USEALPHACLIP)
