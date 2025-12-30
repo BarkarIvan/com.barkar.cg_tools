@@ -19,7 +19,7 @@ struct CustomSurfaceData
   //  float2 uvs;
     half  metallic;
     half  roughness;
-    half  occlusion;
+    half  occlusion; //AO
     half  alpha;
 };
 

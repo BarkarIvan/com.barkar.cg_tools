@@ -1,4 +1,4 @@
-Shader "Barkar/VFX/LocalAtmospheregrid"
+Shader "CGTools/VFX/LocalAtmospheregrid"
 {
     Properties
     {

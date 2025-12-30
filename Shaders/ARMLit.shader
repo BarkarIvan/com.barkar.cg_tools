@@ -1,4 +1,4 @@
-Shader "Barkar/ARMLit"
+Shader "CGTools/ARMLit"
 {
     Properties
     {
@@ -7,7 +7,6 @@ Shader "Barkar/ARMLit"
         _BaseColor ("Color", Color) = (1,1,1,1)
 
         _AdditionalMap ("ARM Map", 2D) = "white"{}
-        [NoScaleOffset] _GltfBrdfLut ("GLTF BRDF LUT", 2D) = "white"{}
         _OcclusionStrength ("Occlusion Strength", Range(0,1)) = 1.0
 
         _NormalMap ("Normal Map", 2D) = "gray"{}
@@ -142,6 +141,7 @@ Shader "Barkar/ARMLit"
                 half4 color : COLOR;
             };
 
+            const half kMinPerceptualRoughness = 0.04h;
 
             Varyings BeresnevStylizedVertex(Attributes IN)
             {
@@ -194,7 +194,12 @@ Shader "Barkar/ARMLit"
                 half metallicMask = additionalMaps.b;
                 surfaceData.metallic = metallicMask * _Metallic;
                 surfaceData.roughness = roughnessMask * _Roughness;
-                surfaceData.occlusion = lerp(1.0, additionalMaps.r, _OcclusionStrength);
+                surfaceData.occlusion = additionalMaps.r;
+                #endif
+
+                #if !defined(_ADDITIONALMAP)
+                surfaceData.roughness = clamp(surfaceData.roughness, kMinPerceptualRoughness, 1.0);
+                surfaceData.metallic = saturate(surfaceData.metallic);
                 #endif
 
                 //normal map
@@ -231,12 +236,12 @@ Shader "Barkar/ARMLit"
                 half3 indirectDiffuse = SAMPLE_GI(IN.lightmapUV, IN.SH, litData.N);
 
                 MixRealtimeAndBakedGI(mainLight, litData.N, indirectDiffuse);
-                half3 envPbr = EnvBRDF(litData, surfaceData, 0, IN.positionWS, indirectDiffuse);
-                half3 directPbr = StandardBRDF_New(litData, surfaceData, mainLight.direction, mainLight.color,
+                half3 envPbr = GltfIBL(litData, surfaceData, 0, IN.positionWS, indirectDiffuse);
+                half3 directPbr = GltfDirectBRDF(litData, surfaceData, mainLight.direction, mainLight.color,
                                                                    mainLight.shadowAttenuation);
 
-
-                //TODO Forward +
+                //WIP!
+                //TODO Forward + 
                 #if defined(_ADDITIONAL_LIGHTS)
                 half3 additionalLights = 0;
                 int lightCount = GetAdditionalLightsCount();
@@ -244,7 +249,7 @@ Shader "Barkar/ARMLit"
 
                 LIGHT_LOOP_BEGIN(lightCount)
                     Light addlight = GetAdditionalPerObjectLight(lightIndex, IN.positionWS);
-                    directPbr += StandardBRDF_New(litData, surfaceData, addlight.direction, addlight.color,
+                    directPbr += GltfDirectBRDF(litData, surfaceData, addlight.direction, addlight.color,
       addlight.distanceAttenuation);
                 LIGHT_LOOP_END
 
@@ -252,6 +257,9 @@ Shader "Barkar/ARMLit"
                 #endif
                 
                 result.rgb = directPbr + envPbr; //saturate only for Metal api?
+                #if defined (_ADDITIONALMAP)
+                result.rgb = lerp(result.rgb, result.rgb * surfaceData.occlusion, _OcclusionStrength);
+                #endif
                 //Emission
                 half3 emissionColor = _EmissionColor.rgb;
                 #if defined(_EMISSION)
@@ -448,5 +456,5 @@ Shader "Barkar/ARMLit"
 
 
 
-    CustomEditor "BarkarARMLitShaderEditor"
+    CustomEditor "ARMLitShaderEditor"
 }
