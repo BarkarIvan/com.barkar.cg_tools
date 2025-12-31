@@ -192,8 +192,8 @@ Shader "CGTools/ARMLit"
                 half4 additionalMaps = SAMPLE_TEXTURE2D(_AdditionalMap, sampler_AdditionalMap, IN.uv);
                 half roughnessMask = additionalMaps.g;
                 half metallicMask = additionalMaps.b;
-                surfaceData.metallic = metallicMask * _Metallic;
-                surfaceData.roughness = roughnessMask * _Roughness;
+                surfaceData.metallic = metallicMask ;
+                surfaceData.roughness = roughnessMask;
                 surfaceData.occlusion = additionalMaps.r;
                 #endif
 
