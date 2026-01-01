@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEditor;
 using UnityEngine;
 
@@ -7,6 +8,42 @@ namespace CustomMipMapGenerator
     internal sealed class CustomMipMapGeneratorSettingsDrawer : PropertyDrawer
     {
         private const float SectionSpacing = 4f;
+        private static readonly Dictionary<string, string> Tooltips = new Dictionary<string, string>
+        {
+            ["textureKind"] = "Color = sRGB color. Normal Map = normal renormalization + Toksvig. Packed/Data = linear masks/roughness/AO/height.",
+            ["filterMode"] = "Kaiser = sharper, more detail, more ringing risk. EWA = smoother, less ringing and moire on diagonals/anisotropic patterns.",
+            ["kaiserBeta"] = "Sharpness vs ringing. Higher = sharper but more ringing.",
+            ["baseRadius"] = "Filter radius in texels. Higher = smoother but blurrier.",
+            ["ewaSigma"] = "Elliptical Gaussian radius in texels. Higher = smoother.",
+            ["edgeAware"] = "Reduce color bleeding across edges by lowering weights across luminance changes.",
+            ["edgeSigma"] = "Edge sensitivity. Lower values preserve edges more aggressively.",
+            ["fullResMipCount"] = "Number of mip levels generated from full-res source before switching to previous-mip source.",
+            ["maxFullResRatio"] = "0 = no cap. Switches to previous mip if source/dest ratio exceeds this value.",
+            ["sharpenEnabled"] = "Apply unsharp filter to the first N mips.",
+            ["sharpenStrength"] = "Sharpen amount. Keep low to avoid halos.",
+            ["sharpenClamp"] = "Clamp overshoot to limit ringing.",
+            ["sharpenMipCount"] = "Number of mip levels to sharpen.",
+            ["sharpenNormals"] = "Apply sharpening to normal maps.",
+            ["toksvigInAlpha"] = "Store normal length in alpha for Toksvig roughness. Requires shader support.",
+            ["alphaFilterMode"] = "None = filter alpha normally. PreserveCoverage = keep alpha-clip coverage. MaxFilter = dilate alpha.",
+            ["alphaClip"] = "Alpha threshold used for coverage preservation.",
+            ["maxFilterRadiusMin"] = "Minimum dilation radius for MaxFilter alpha.",
+            ["maxFilterRadiusMax"] = "Maximum dilation radius for MaxFilter alpha.",
+            ["maxFilterStepSize"] = "Increase dilation radius after every N mip levels.",
+            ["usePerChannelFilter"] = "Override filter per channel (Average/Min/Max/LinearRoughness/LinearSmoothness/PowerMean/PreserveCoverage).",
+            ["channelFilterR"] = "Filter for R channel.",
+            ["channelFilterG"] = "Filter for G channel.",
+            ["channelFilterB"] = "Filter for B channel.",
+            ["channelFilterA"] = "Filter for A channel.",
+            ["channelPower"] = "p < 1 biases darker (AO), p > 1 biases brighter. 1 = average.",
+            ["wrapModeU"] = "Texture wrap mode for U axis.",
+            ["wrapModeV"] = "Texture wrap mode for V axis.",
+            ["samplerFilterMode"] = "Filtering mode for sampling the output texture.",
+            ["anisoLevel"] = "Anisotropic filtering level.",
+            ["mipBias"] = "Mip LOD bias.",
+            ["compressionMobile"] = "Compression format for mobile targets (Android/iOS/tvOS).",
+            ["compressionPc"] = "Compression format for standalone desktop targets."
+        };
 
         public override void OnGUI(Rect position, SerializedProperty property, GUIContent label)
         {
@@ -338,21 +375,21 @@ namespace CustomMipMapGenerator
 
             float height = EditorGUI.GetPropertyHeight(property);
             var line = new Rect(position.x, y, position.width, height);
-            EditorGUI.PropertyField(line, property);
+            EditorGUI.PropertyField(line, property, GetLabel(property));
             y = line.yMax + spacing;
         }
 
         private static void DrawSlider(Rect position, ref float y, SerializedProperty property, float min, float max)
         {
             var line = new Rect(position.x, y, position.width, EditorGUIUtility.singleLineHeight);
-            property.floatValue = EditorGUI.Slider(line, property.displayName, property.floatValue, min, max);
+            property.floatValue = EditorGUI.Slider(line, GetLabel(property), property.floatValue, min, max);
             y = line.yMax + EditorGUIUtility.standardVerticalSpacing;
         }
 
         private static void DrawIntSlider(Rect position, ref float y, SerializedProperty property, int min, int max)
         {
             var line = new Rect(position.x, y, position.width, EditorGUIUtility.singleLineHeight);
-            property.intValue = EditorGUI.IntSlider(line, property.displayName, property.intValue, min, max);
+            property.intValue = EditorGUI.IntSlider(line, GetLabel(property), property.intValue, min, max);
             y = line.yMax + EditorGUIUtility.standardVerticalSpacing;
         }
 
@@ -360,6 +397,17 @@ namespace CustomMipMapGenerator
         {
             var target = property.serializedObject?.targetObject;
             return target is CustomMipMapGeneratorProfileSet;
+        }
+
+        private static GUIContent GetLabel(SerializedProperty property)
+        {
+            if (property == null)
+                return GUIContent.none;
+
+            if (Tooltips.TryGetValue(property.name, out var tooltip) && !string.IsNullOrEmpty(tooltip))
+                return new GUIContent(property.displayName, tooltip);
+
+            return new GUIContent(property.displayName);
         }
     }
 }

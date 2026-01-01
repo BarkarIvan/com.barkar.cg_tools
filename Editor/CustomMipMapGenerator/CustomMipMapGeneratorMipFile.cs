@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.IO.Compression;
 using Unity.Collections;
 using UnityEngine;
 
@@ -9,8 +10,10 @@ namespace CustomMipMapGenerator
     {
         public const string Extension = ".cmips";
         private const uint Magic = 0x50494D43; // CMIP
-        private const int Version = 1;
+        private const int Version = 2;
         private const int HeaderSize = 24;
+        private const byte CompressionNone = 0;
+        private const byte CompressionDeflate = 1;
 
         internal struct Header
         {
@@ -18,6 +21,7 @@ namespace CustomMipMapGenerator
             public int height;
             public int mipCount;
             public TextureKind textureKind;
+            public byte compression;
         }
 
         public static bool TryWrite(string assetPath, Texture2D texture, TextureKind textureKind, out string error)
@@ -52,6 +56,10 @@ namespace CustomMipMapGenerator
                 return false;
             }
 
+            byte[] rawBytes = rawData.ToArray();
+            byte compression = CompressionNone;
+            byte[] payload = CompressIfSmaller(rawBytes, out compression);
+
             try
             {
                 using (var stream = new FileStream(assetPath, FileMode.Create, FileAccess.Write, FileShare.None))
@@ -63,12 +71,11 @@ namespace CustomMipMapGenerator
                     writer.Write(height);
                     writer.Write(mipCount);
                     writer.Write((byte)textureKind);
-                    writer.Write((byte)0);
+                    writer.Write(compression);
                     writer.Write((byte)0);
                     writer.Write((byte)0);
 
-                    var rawBytes = rawData.ToArray();
-                    writer.Write(rawBytes);
+                    writer.Write(payload);
                 }
             }
             catch (Exception ex)
@@ -111,7 +118,7 @@ namespace CustomMipMapGenerator
                     }
 
                     int version = reader.ReadInt32();
-                    if (version != Version)
+                    if (version != 1 && version != Version)
                     {
                         error = $"Unsupported version {version}.";
                         return false;
@@ -121,7 +128,16 @@ namespace CustomMipMapGenerator
                     header.height = reader.ReadInt32();
                     header.mipCount = reader.ReadInt32();
                     header.textureKind = (TextureKind)reader.ReadByte();
-                    reader.ReadBytes(3);
+                    if (version >= 2)
+                    {
+                        header.compression = reader.ReadByte();
+                        reader.ReadBytes(2);
+                    }
+                    else
+                    {
+                        reader.ReadBytes(3);
+                        header.compression = CompressionNone;
+                    }
 
                     if (header.width <= 0 || header.height <= 0 || header.mipCount <= 0)
                     {
@@ -131,16 +147,43 @@ namespace CustomMipMapGenerator
 
                     long expectedSize = ComputeDataSize(header.width, header.height, header.mipCount);
                     long remaining = stream.Length - HeaderSize;
-                    if (expectedSize <= 0 || remaining < expectedSize || expectedSize > int.MaxValue)
+                    if (expectedSize <= 0 || expectedSize > int.MaxValue)
                     {
                         error = "File payload size mismatch.";
                         return false;
                     }
 
-                    rawData = reader.ReadBytes((int)expectedSize);
-                    if (rawData.Length != expectedSize)
+                    if (header.compression == CompressionNone)
                     {
-                        error = "Failed to read mip payload.";
+                        if (remaining < expectedSize)
+                        {
+                            error = "File payload size mismatch.";
+                            return false;
+                        }
+
+                        rawData = reader.ReadBytes((int)expectedSize);
+                        if (rawData.Length != expectedSize)
+                        {
+                            error = "Failed to read mip payload.";
+                            return false;
+                        }
+                    }
+                    else if (header.compression == CompressionDeflate)
+                    {
+                        if (remaining <= 0 || remaining > int.MaxValue)
+                        {
+                            error = "Compressed payload size mismatch.";
+                            return false;
+                        }
+
+                        var compressed = reader.ReadBytes((int)remaining);
+                        rawData = DecompressDeflate(compressed, (int)expectedSize, out error);
+                        if (rawData == null)
+                            return false;
+                    }
+                    else
+                    {
+                        error = $"Unsupported compression {header.compression}.";
                         return false;
                     }
                 }
@@ -165,6 +208,75 @@ namespace CustomMipMapGenerator
             }
 
             return total;
+        }
+
+        private static byte[] CompressIfSmaller(byte[] rawBytes, out byte compression)
+        {
+            compression = CompressionNone;
+            if (rawBytes == null || rawBytes.Length == 0)
+                return rawBytes;
+
+            try
+            {
+                using (var stream = new MemoryStream())
+                {
+                    using (var deflate = new DeflateStream(stream, System.IO.Compression.CompressionLevel.Optimal, true))
+                        deflate.Write(rawBytes, 0, rawBytes.Length);
+
+                    var compressed = stream.ToArray();
+                    if (compressed.Length < rawBytes.Length)
+                    {
+                        compression = CompressionDeflate;
+                        return compressed;
+                    }
+                }
+            }
+            catch (Exception)
+            {
+            }
+
+            compression = CompressionNone;
+            return rawBytes;
+        }
+
+        private static byte[] DecompressDeflate(byte[] compressed, int expectedSize, out string error)
+        {
+            error = null;
+            if (compressed == null || compressed.Length == 0)
+            {
+                error = "Compressed payload is empty.";
+                return null;
+            }
+
+            try
+            {
+                using (var input = new MemoryStream(compressed))
+                using (var deflate = new DeflateStream(input, CompressionMode.Decompress))
+                {
+                    var result = new byte[expectedSize];
+                    int offset = 0;
+                    while (offset < result.Length)
+                    {
+                        int read = deflate.Read(result, offset, result.Length - offset);
+                        if (read == 0)
+                            break;
+                        offset += read;
+                    }
+
+                    if (offset != result.Length)
+                    {
+                        error = $"Decompressed size mismatch. Expected {expectedSize} bytes, got {offset}.";
+                        return null;
+                    }
+
+                    return result;
+                }
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                return null;
+            }
         }
     }
 }
