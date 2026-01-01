@@ -211,6 +211,8 @@
         <p>One file in <code>Assets</code> that contains the full mip chain.</p>
         <ul>
           <li>Importer compresses per active build target (mobile/standalone).</li>
+          <li>Payload is RGBA32 mip data; v2 adds optional Deflate compression (used only if smaller).</li>
+          <li>Older v1 files still load; regenerate to benefit from compression.</li>
           <li>No build swap needed.</li>
           <li>Compression settings are stored on the importer and can be adjusted later.</li>
         </ul>
