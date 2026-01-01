@@ -152,6 +152,7 @@ half3 GltfDirectBRDF(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 ligh
     float3 H  = SafeNormalize(ld.V + L);
     float NoH = saturate(dot(ld.N, H));
     float VoH = saturate(dot(ld.V, H));
+    float LoH = saturate(dot(H, L));
     float3 radiance = lightColor * atten; 
 
     float3 diffuseColor = sd.albedo * (1.0 - kDielectricSpec.rgb) * (1.0 - sd.metallic);
@@ -163,7 +164,7 @@ half3 GltfDirectBRDF(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 ligh
     float G = Gltf_G_Smith(NoL, NoV, alphaRoughness);
     float D = Gltf_D_GGX(NoH, alphaRoughness);
 
-    float3 diffuseContrib = (1.0 - F) * Diffuse_Lambert(diffuseColor);
+    float3 diffuseContrib = (1.0 - F) * Diffuse_Burley(diffuseColor, pr, NoV, NoL, LoH );//Diffuse_Lambert(diffuseColor);
     float3 specContrib = F * G * D / (4.0 * NoL * NoV);
     float3 color = (diffuseContrib + specContrib) * radiance * NoL;
 
