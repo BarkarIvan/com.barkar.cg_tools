@@ -2,7 +2,15 @@ fileFormatVersion: 2
 guid: 8f0e43cd01f57d048ad8b79aa805f69f
 ShaderImporter:
   externalObjects: {}
-  defaultTextures: []
+  defaultTextures:
+  - _BaseMap: {instanceID: 0}
+  - _AdditionalMap: {instanceID: 0}
+  - _NormalMap: {instanceID: 0}
+  - _SpecularMap: {instanceID: 0}
+  - _ClearcoatMap: {instanceID: 0}
+  - _ClearcoatNormalMap: {instanceID: 0}
+  - _SheenColorMap: {instanceID: 0}
+  - _EmissionMap: {instanceID: 0}
   nonModifiableTextures: []
   userData: 
   assetBundleName: 

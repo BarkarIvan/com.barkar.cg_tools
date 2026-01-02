@@ -3,6 +3,12 @@
 
 #include "Packages/com.barkar.cg_tools/ShaderLibrary/GltfExtensions/GltfCore.hlsl"
 
+// Integration hint (ARMLit):
+// - Add shader_feature_local _MATERIAL_ANISOTROPY and _ANISOTROPY_MAP.
+// - Sample map RG for direction (remap 0..1 to -1..1) and B for strength.
+// - Rotate direction, build anisotropic T/B from mesh T/B and N, then use
+//   Gltf_BRDF_SpecularGGX_Anisotropy and Gltf_GetIBLRadianceAnisotropy.
+
 float Gltf_D_GGX_Anisotropic(float NoH, float ToH, float BoH, float anisotropy, float at, float ab)
 {
     float a2 = at * ab;

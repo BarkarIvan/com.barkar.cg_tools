@@ -47,17 +47,6 @@ public class ARMLitShaderEditor : BaseShaderGUI
         public MaterialProperty ClearcoatMap;
         public MaterialProperty ClearcoatNormalMap;
         public MaterialProperty ClearcoatNormalScale;
-        public MaterialProperty UseIridescence;
-        public MaterialProperty IridescenceFactor;
-        public MaterialProperty IridescenceIor;
-        public MaterialProperty IridescenceThicknessMin;
-        public MaterialProperty IridescenceThicknessMax;
-        public MaterialProperty IridescenceMap;
-        public MaterialProperty IridescenceThicknessMap;
-        public MaterialProperty UseAnisotropy;
-        public MaterialProperty AnisotropyStrength;
-        public MaterialProperty AnisotropyRotation;
-        public MaterialProperty AnisotropyMap;
         public MaterialProperty UseSheen;
         public MaterialProperty SheenColor;
         public MaterialProperty SheenRoughness;
@@ -208,35 +197,6 @@ public class ARMLitShaderEditor : BaseShaderGUI
         EditorGUILayout.Space(SectionSpacing);
     }
 
-    private void DrawIridescenceSection()
-    {
-        EditorGUILayout.HelpBox("KHR_materials_iridescence", MessageType.None);
-        materialEditorRef.ShaderProperty(props.UseIridescence, "Use Iridescence");
-        if (props.UseIridescence.floatValue > 0)
-        {
-            materialEditorRef.ShaderProperty(props.IridescenceFactor, "Iridescence Factor");
-            materialEditorRef.ShaderProperty(props.IridescenceIor, "Iridescence IOR");
-            materialEditorRef.ShaderProperty(props.IridescenceThicknessMin, "Thickness Min (nm)");
-            materialEditorRef.ShaderProperty(props.IridescenceThicknessMax, "Thickness Max (nm)");
-            materialEditorRef.TextureProperty(props.IridescenceMap, "Iridescence Map (R=Factor)");
-            materialEditorRef.TextureProperty(props.IridescenceThicknessMap, "Iridescence Thickness Map (G=Thickness)");
-        }
-        EditorGUILayout.Space(SectionSpacing);
-    }
-
-    private void DrawAnisotropySection()
-    {
-        EditorGUILayout.HelpBox("KHR_materials_anisotropy", MessageType.None);
-        materialEditorRef.ShaderProperty(props.UseAnisotropy, "Use Anisotropy");
-        if (props.UseAnisotropy.floatValue > 0)
-        {
-            materialEditorRef.ShaderProperty(props.AnisotropyStrength, "Anisotropy Strength");
-            materialEditorRef.ShaderProperty(props.AnisotropyRotation, "Anisotropy Rotation (Rad)");
-            materialEditorRef.TextureProperty(props.AnisotropyMap, "Anisotropy Map (RGB: XY Dir B=Strength)");
-        }
-        EditorGUILayout.Space(SectionSpacing);
-    }
-
     private void DrawSheenSection()
     {
         EditorGUILayout.HelpBox("KHR_materials_sheen", MessageType.None);
@@ -314,8 +274,6 @@ public class ARMLitShaderEditor : BaseShaderGUI
         DrawBrdfSection();
         DrawSpecularSection();
         DrawClearcoatSection();
-        DrawIridescenceSection();
-        DrawAnisotropySection();
         DrawSheenSection();
         DrawEmissionSection();
     }
@@ -337,11 +295,6 @@ public class ARMLitShaderEditor : BaseShaderGUI
         SetKeyword(material, "_MATERIAL_CLEARCOAT", props.UseClearcoat.floatValue == 1);
         SetKeyword(material, "_CLEARCOAT_MAP", props.UseClearcoat.floatValue == 1 && props.ClearcoatMap.textureValue != null);
         SetKeyword(material, "_CLEARCOAT_NORMALMAP", props.UseClearcoat.floatValue == 1 && props.ClearcoatNormalMap.textureValue != null);
-        SetKeyword(material, "_MATERIAL_IRIDESCENCE", props.UseIridescence.floatValue == 1);
-        SetKeyword(material, "_IRIDESCENCE_MAP", props.UseIridescence.floatValue == 1 && props.IridescenceMap.textureValue != null);
-        SetKeyword(material, "_IRIDESCENCE_THICKNESS_MAP", props.UseIridescence.floatValue == 1 && props.IridescenceThicknessMap.textureValue != null);
-        SetKeyword(material, "_MATERIAL_ANISOTROPY", props.UseAnisotropy.floatValue == 1);
-        SetKeyword(material, "_ANISOTROPY_MAP", props.UseAnisotropy.floatValue == 1 && props.AnisotropyMap.textureValue != null);
         SetKeyword(material, "_MATERIAL_SHEEN", props.UseSheen.floatValue == 1);
         SetKeyword(material, "_SHEEN_COLOR_MAP", props.UseSheen.floatValue == 1 && props.SheenColorMap.textureValue != null);
     }
@@ -395,17 +348,6 @@ public class ARMLitShaderEditor : BaseShaderGUI
             ClearcoatMap = FindProperty("_ClearcoatMap"),
             ClearcoatNormalMap = FindProperty("_ClearcoatNormalMap"),
             ClearcoatNormalScale = FindProperty("_ClearcoatNormalScale"),
-            UseIridescence = FindProperty("_UseIridescence"),
-            IridescenceFactor = FindProperty("_IridescenceFactor"),
-            IridescenceIor = FindProperty("_IridescenceIor"),
-            IridescenceThicknessMin = FindProperty("_IridescenceThicknessMin"),
-            IridescenceThicknessMax = FindProperty("_IridescenceThicknessMax"),
-            IridescenceMap = FindProperty("_IridescenceMap"),
-            IridescenceThicknessMap = FindProperty("_IridescenceThicknessMap"),
-            UseAnisotropy = FindProperty("_UseAnisotropy"),
-            AnisotropyStrength = FindProperty("_AnisotropyStrength"),
-            AnisotropyRotation = FindProperty("_AnisotropyRotation"),
-            AnisotropyMap = FindProperty("_AnisotropyMap"),
             UseSheen = FindProperty("_UseSheen"),
             SheenColor = FindProperty("_SheenColor"),
             SheenRoughness = FindProperty("_SheenRoughness"),

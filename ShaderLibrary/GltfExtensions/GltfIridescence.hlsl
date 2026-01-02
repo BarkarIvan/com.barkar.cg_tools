@@ -3,6 +3,11 @@
 
 #include "Packages/com.barkar.cg_tools/ShaderLibrary/GltfExtensions/GltfCore.hlsl"
 
+// Integration hint (ARMLit):
+// - Add shader_feature_local _MATERIAL_IRIDESCENCE, _IRIDESCENCE_MAP, _IRIDESCENCE_THICKNESS_MAP.
+// - Fill surface data: iridescenceFactor, iridescenceIor, iridescenceThickness (nm).
+// - Sample map R for factor, map G for thickness (lerp min/max), then mix in CustomBRDF.hlsl.
+
 static const float3x3 GLTF_XYZ_TO_REC709 = float3x3(
      3.2404542, -0.9692660,  0.0556434,
     -1.5371385,  1.8760108, -0.2040259,

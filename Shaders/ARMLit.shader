@@ -29,19 +29,6 @@ Shader "CGTools/ARMLit"
         _ClearcoatNormalMap ("Clearcoat Normal Map", 2D) = "bump"{}
         _ClearcoatNormalScale ("Clearcoat Normal Scale", Range(0,3)) = 1.0
 
-        [Toggle(_MATERIAL_IRIDESCENCE)] _UseIridescence ("Use Iridescence (glTF)", Float) = 0
-        _IridescenceFactor ("Iridescence Factor", Range(0,1)) = 0.0
-        _IridescenceIor ("Iridescence IOR", Range(1.0,3.0)) = 1.3
-        _IridescenceThicknessMin ("Iridescence Thickness Min (nm)", Range(0,1200)) = 100.0
-        _IridescenceThicknessMax ("Iridescence Thickness Max (nm)", Range(0,1200)) = 400.0
-        _IridescenceMap ("Iridescence Map (R=Factor)", 2D) = "white"{}
-        _IridescenceThicknessMap ("Iridescence Thickness Map (G=Thickness)", 2D) = "white"{}
-
-        [Toggle(_MATERIAL_ANISOTROPY)] _UseAnisotropy ("Use Anisotropy (glTF)", Float) = 0
-        _AnisotropyStrength ("Anisotropy Strength", Range(0,1)) = 0.0
-        _AnisotropyRotation ("Anisotropy Rotation (Rad)", Range(0,6.283185)) = 0.0
-        _AnisotropyMap ("Anisotropy Map (RGB: XY Dir B=Strength)", 2D) = "white"{}
-
         [Toggle(_MATERIAL_SHEEN)] _UseSheen ("Use Sheen (glTF)", Float) = 0
         _SheenColor ("Sheen Color", Color) = (0,0,0,1)
         _SheenRoughness ("Sheen Roughness", Range(0,1)) = 0.0
@@ -98,11 +85,6 @@ Shader "CGTools/ARMLit"
             #pragma shader_feature_local _MATERIAL_CLEARCOAT
             #pragma shader_feature_local _CLEARCOAT_MAP
             #pragma shader_feature_local _CLEARCOAT_NORMALMAP
-            #pragma shader_feature_local _MATERIAL_IRIDESCENCE
-            #pragma shader_feature_local _IRIDESCENCE_MAP
-            #pragma shader_feature_local _IRIDESCENCE_THICKNESS_MAP
-            #pragma shader_feature_local _MATERIAL_ANISOTROPY
-            #pragma shader_feature_local _ANISOTROPY_MAP
             #pragma shader_feature_local _MATERIAL_SHEEN
             #pragma shader_feature_local _SHEEN_COLOR_MAP
             #pragma shader_feature_fragment _EMISSION
@@ -145,12 +127,6 @@ Shader "CGTools/ARMLit"
             SAMPLER(sampler_ClearcoatMap);
             TEXTURE2D(_ClearcoatNormalMap);
             SAMPLER(sampler_ClearcoatNormalMap);
-            TEXTURE2D(_IridescenceMap);
-            SAMPLER(sampler_IridescenceMap);
-            TEXTURE2D(_IridescenceThicknessMap);
-            SAMPLER(sampler_IridescenceThicknessMap);
-            TEXTURE2D(_AnisotropyMap);
-            SAMPLER(sampler_AnisotropyMap);
             TEXTURE2D(_SheenColorMap);
             SAMPLER(sampler_SheenColorMap);
             TEXTURE2D(_NormalMap);
@@ -172,12 +148,6 @@ Shader "CGTools/ARMLit"
                 half _ClearcoatFactor;
                 half _ClearcoatRoughness;
                 half _ClearcoatNormalScale;
-                half _IridescenceFactor;
-                float _IridescenceIor;
-                float _IridescenceThicknessMin;
-                float _IridescenceThicknessMax;
-                half _AnisotropyStrength;
-                float _AnisotropyRotation;
                 half4 _SheenColor;
                 half _SheenRoughness;
                 half _Cutoff;
@@ -300,12 +270,6 @@ Shader "CGTools/ARMLit"
                 surfaceData.clearcoatFactor = 0.0;
                 surfaceData.clearcoatRoughness = 0.0;
                 surfaceData.clearcoatNormal = geomNormalWS;
-                surfaceData.iridescenceFactor = 0.0;
-                surfaceData.iridescenceIor = 1.3;
-                surfaceData.iridescenceThickness = 0.0;
-                surfaceData.anisotropyStrength = 0.0;
-                surfaceData.anisotropicT = litData.T;
-                surfaceData.anisotropicB = litData.B;
                 surfaceData.sheenColor = float3(0.0, 0.0, 0.0);
                 surfaceData.sheenRoughness = 0.0;
 
@@ -337,39 +301,6 @@ Shader "CGTools/ARMLit"
                 surfaceData.clearcoatRoughness = saturate(surfaceData.clearcoatRoughness);
                 #endif
 
-                #if defined(_MATERIAL_IRIDESCENCE)
-                surfaceData.iridescenceFactor = _IridescenceFactor;
-                surfaceData.iridescenceIor = _IridescenceIor;
-                surfaceData.iridescenceThickness = _IridescenceThicknessMax;
-                #if defined(_IRIDESCENCE_MAP)
-                surfaceData.iridescenceFactor *= SAMPLE_TEXTURE2D(_IridescenceMap, sampler_IridescenceMap, IN.uv).r;
-                #endif
-                #if defined(_IRIDESCENCE_THICKNESS_MAP)
-                float iridescenceThicknessSample = SAMPLE_TEXTURE2D(_IridescenceThicknessMap, sampler_IridescenceThicknessMap, IN.uv).g;
-                surfaceData.iridescenceThickness = lerp(_IridescenceThicknessMin, _IridescenceThicknessMax, iridescenceThicknessSample);
-                #endif
-                surfaceData.iridescenceFactor = saturate(surfaceData.iridescenceFactor);
-                #endif
-
-                #if defined(_MATERIAL_ANISOTROPY)
-                surfaceData.anisotropyStrength = _AnisotropyStrength;
-                float2 anisotropyDirection = float2(1.0, 0.0);
-                float anisotropyStrengthFactor = 1.0;
-                #if defined(_ANISOTROPY_MAP)
-                float3 anisotropySample = SAMPLE_TEXTURE2D(_AnisotropyMap, sampler_AnisotropyMap, IN.uv).rgb;
-                anisotropyDirection = anisotropySample.xy * 2.0 - 1.0;
-                anisotropyStrengthFactor = anisotropySample.z;
-                #endif
-                float anisotropyCos = cos(_AnisotropyRotation);
-                float anisotropySin = sin(_AnisotropyRotation);
-                float2 anisotropyDirRot = float2(
-                    anisotropyDirection.x * anisotropyCos - anisotropyDirection.y * anisotropySin,
-                    anisotropyDirection.x * anisotropySin + anisotropyDirection.y * anisotropyCos
-                );
-                surfaceData.anisotropicT = SafeNormalize(litData.T * anisotropyDirRot.x + litData.B * anisotropyDirRot.y);
-                surfaceData.anisotropicB = SafeNormalize(cross(geomNormalWS, surfaceData.anisotropicT));
-                surfaceData.anisotropyStrength = saturate(surfaceData.anisotropyStrength * anisotropyStrengthFactor);
-                #endif
 
                 #if defined(_MATERIAL_SHEEN)
                 surfaceData.sheenColor = _SheenColor.rgb;
