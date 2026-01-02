@@ -7,6 +7,14 @@ namespace MeshQuantization
 {
     internal sealed class MeshQuantizationWindow : EditorWindow
     {
+        private const string PrefKeyPrefix = "MeshQuantizationWindow.";
+        private const string PrefSuffix = PrefKeyPrefix + "Suffix";
+        private const string PrefOverwriteExisting = PrefKeyPrefix + "OverwriteExisting";
+        private const string PrefForceReadable = PrefKeyPrefix + "ForceReadable";
+        private const string PrefRestoreReadable = PrefKeyPrefix + "RestoreReadable";
+        private const string PrefOverwriteVertexColors = PrefKeyPrefix + "OverwriteVertexColors";
+        private const string PrefDisableReadWrite = PrefKeyPrefix + "DisableReadWrite";
+
         [SerializeField] private Object source;
         [SerializeField] private string suffix = "_MQ";
         [SerializeField] private bool overwriteExisting;
@@ -16,16 +24,60 @@ namespace MeshQuantization
 
         private void OnEnable()
         {
-            if (settings == null)
-                settings = new MeshQuantizationSettings();
-            settings.generateMissingNormals = false;
-            settings.generateMissingTangents = false;
+            InitializeSettings();
+            LoadPrefs();
+        }
+
+        private void OnDisable()
+        {
+            SavePrefs();
         }
 
         [MenuItem("Tools/Mesh Quantization/Quantize Meshes")]
         private static void ShowWindow()
         {
             GetWindow<MeshQuantizationWindow>("Mesh Quantization");
+        }
+
+        [MenuItem("Assets/Mesh Quantization/Quantize Meshes")]
+        private static void QuantizeSelection()
+        {
+            var target = Selection.activeObject;
+            if (target == null)
+                return;
+
+            MeshQuantizationWindow runner = null;
+            bool destroyAfter = false;
+            var windows = Resources.FindObjectsOfTypeAll<MeshQuantizationWindow>();
+            if (windows != null && windows.Length > 0)
+            {
+                runner = windows[0];
+            }
+            else
+            {
+                runner = CreateInstance<MeshQuantizationWindow>();
+                destroyAfter = true;
+            }
+
+            runner.InitializeSettings();
+            if (destroyAfter)
+                runner.LoadPrefs();
+
+            runner.source = target;
+            runner.QuantizeAndSave();
+
+            if (destroyAfter)
+                DestroyImmediate(runner);
+        }
+
+        [MenuItem("Assets/Mesh Quantization/Quantize Meshes", true)]
+        private static bool QuantizeSelectionValidate()
+        {
+            var target = Selection.activeObject;
+            if (target == null)
+                return false;
+
+            return CollectMeshes(target, out _, out _).Count > 0;
         }
 
         private void OnGUI()
@@ -73,6 +125,7 @@ namespace MeshQuantization
 
         private void QuantizeAndSave()
         {
+            SavePrefs();
             var meshes = CollectMeshes(source, out var sourcePath, out _);
             if (meshes.Count == 0)
                 return;
@@ -238,6 +291,37 @@ namespace MeshQuantization
 
             modelImporter.isReadable = false;
             modelImporter.SaveAndReimport();
+        }
+
+        private void InitializeSettings()
+        {
+            if (settings == null)
+                settings = new MeshQuantizationSettings();
+            settings.generateMissingNormals = false;
+            settings.generateMissingTangents = false;
+        }
+
+        private void LoadPrefs()
+        {
+            suffix = EditorPrefs.GetString(PrefSuffix, suffix);
+            overwriteExisting = EditorPrefs.GetBool(PrefOverwriteExisting, overwriteExisting);
+            forceReadable = EditorPrefs.GetBool(PrefForceReadable, forceReadable);
+            restoreReadable = EditorPrefs.GetBool(PrefRestoreReadable, restoreReadable);
+            settings.overwriteVertexColors = EditorPrefs.GetBool(PrefOverwriteVertexColors, settings.overwriteVertexColors);
+            settings.disableReadWrite = EditorPrefs.GetBool(PrefDisableReadWrite, settings.disableReadWrite);
+        }
+
+        private void SavePrefs()
+        {
+            if (settings == null)
+                settings = new MeshQuantizationSettings();
+
+            EditorPrefs.SetString(PrefSuffix, suffix ?? string.Empty);
+            EditorPrefs.SetBool(PrefOverwriteExisting, overwriteExisting);
+            EditorPrefs.SetBool(PrefForceReadable, forceReadable);
+            EditorPrefs.SetBool(PrefRestoreReadable, restoreReadable);
+            EditorPrefs.SetBool(PrefOverwriteVertexColors, settings.overwriteVertexColors);
+            EditorPrefs.SetBool(PrefDisableReadWrite, settings.disableReadWrite);
         }
     }
 }
