@@ -25,15 +25,17 @@ float3 MQ_CalculateTangentBase(float3 normalWS)
         : normalize(float3(0.0, -normalWS.z, normalWS.y));
 }
 
-float4 MQ_DecodeTangentFromColor(float4 packed)
+float4 MQ_DecodeTangentFromColor(float4 packed, float3 n)
 {
-    float3 n = MQ_DecodeNormalFromColor(packed);
     float3 tb = MQ_CalculateTangentBase(n);
-    float angle = packed.z * (2.0 * MQ_PI);
+    float s;
+    float c;
+    sincos(packed.z * (2.0 * MQ_PI), s, c);
+    float3 t = normalize(tb * c + cross(n, tb) * s);
     float sign = packed.w > 0.5 ? 1.0 : -1.0;
-    float3 t = normalize(tb * cos(angle) + cross(n, tb) * sin(angle));
     return float4(t, sign);
 }
+
 
 float3 MQ_DecodeBitangent(float3 n, float3 t, float sign)
 {

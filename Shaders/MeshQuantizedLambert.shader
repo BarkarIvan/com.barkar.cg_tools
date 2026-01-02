@@ -82,7 +82,7 @@ Shader "CGTools/MeshQuantization/Lambert"
 
                 #if defined(_NORMALMAP)
                 #if defined(_MQ_QUANTIZED)
-                float4 tangentOS = MQ_DecodeTangentFromColor(IN.color);
+                float4 tangentOS = MQ_DecodeTangentFromColor(IN.color, normalOS);
                 #else
                 float4 tangentOS = IN.tangentOS;
                 #endif

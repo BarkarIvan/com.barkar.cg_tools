@@ -14,6 +14,14 @@ namespace MeshQuantization
         [SerializeField] private bool restoreReadable = true;
         [SerializeField] private MeshQuantizationSettings settings = new MeshQuantizationSettings();
 
+        private void OnEnable()
+        {
+            if (settings == null)
+                settings = new MeshQuantizationSettings();
+            settings.generateMissingNormals = false;
+            settings.generateMissingTangents = false;
+        }
+
         [MenuItem("Tools/Mesh Quantization/Quantize Meshes")]
         private static void ShowWindow()
         {
@@ -54,8 +62,6 @@ namespace MeshQuantization
             EditorGUILayout.Space();
             EditorGUILayout.LabelField("Quantization", EditorStyles.boldLabel);
             settings.overwriteVertexColors = EditorGUILayout.Toggle("Overwrite Vertex Colors", settings.overwriteVertexColors);
-            settings.generateMissingNormals = EditorGUILayout.Toggle("Generate Missing Normals", settings.generateMissingNormals);
-            settings.generateMissingTangents = EditorGUILayout.Toggle("Generate Missing Tangents", settings.generateMissingTangents);
             settings.disableReadWrite = EditorGUILayout.Toggle("Disable Read/Write (Output)", settings.disableReadWrite);
 
             using (new EditorGUI.DisabledScope(meshes.Count == 0))
@@ -110,9 +116,18 @@ namespace MeshQuantization
                 }
 
                 string targetPath = BuildTargetPath(dir, copy.name);
-                if (overwriteExisting && AssetDatabase.LoadAssetAtPath<Mesh>(targetPath) != null)
-                    AssetDatabase.DeleteAsset(targetPath);
-                else
+                Mesh existing = overwriteExisting ? AssetDatabase.LoadAssetAtPath<Mesh>(targetPath) : null;
+                if (existing != null)
+                {
+                    EditorUtility.CopySerialized(copy, existing);
+                    existing.name = copy.name;
+                    EditorUtility.SetDirty(existing);
+                    DestroyImmediate(copy);
+                    saved++;
+                    continue;
+                }
+
+                if (!overwriteExisting)
                     targetPath = AssetDatabase.GenerateUniqueAssetPath(targetPath);
 
                 AssetDatabase.CreateAsset(copy, targetPath);
@@ -205,16 +220,8 @@ namespace MeshQuantization
             if (modelImporter.isReadable)
                 return false;
 
-            MeshQuantizationAutoProcessor.SuppressAutoImport = true;
-            try
-            {
-                modelImporter.isReadable = true;
-                modelImporter.SaveAndReimport();
-            }
-            finally
-            {
-                MeshQuantizationAutoProcessor.SuppressAutoImport = false;
-            }
+            modelImporter.isReadable = true;
+            modelImporter.SaveAndReimport();
             return true;
         }
 
@@ -229,16 +236,8 @@ namespace MeshQuantization
             if (!modelImporter.isReadable)
                 return;
 
-            MeshQuantizationAutoProcessor.SuppressAutoImport = true;
-            try
-            {
-                modelImporter.isReadable = false;
-                modelImporter.SaveAndReimport();
-            }
-            finally
-            {
-                MeshQuantizationAutoProcessor.SuppressAutoImport = false;
-            }
+            modelImporter.isReadable = false;
+            modelImporter.SaveAndReimport();
         }
     }
 }

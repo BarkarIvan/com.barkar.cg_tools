@@ -7,8 +7,8 @@ namespace MeshQuantization
     public sealed class MeshQuantizationSettings
     {
         public bool overwriteVertexColors = true;
-        public bool generateMissingNormals = true;
-        public bool generateMissingTangents = true;
+        public bool generateMissingNormals = false;
+        public bool generateMissingTangents = false;
         public bool disableReadWrite = true;
 
         public MeshQuantizationSettings Clone()

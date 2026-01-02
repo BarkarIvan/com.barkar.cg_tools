@@ -169,12 +169,9 @@ namespace MeshQuantization
 
             mesh.bounds = bounds;
 
-            MeshQuantizationDebug.Log($"[MQ] Quantized mesh data: {mesh.name} vtx={vertexCount} colors={packed.Length}");
-
             if (settings.disableReadWrite)
             {
                 mesh.UploadMeshData(true);
-                MeshQuantizationDebug.Log($"[MQ] Released CPU copy: {mesh.name}");
             }
 
             return true;
