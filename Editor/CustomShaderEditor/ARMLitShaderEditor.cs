@@ -56,6 +56,7 @@ public class ARMLitShaderEditor : BaseShaderGUI
         public MaterialProperty EmissionColor;
         public MaterialProperty EmissionMap;
         public MaterialProperty Brightness;
+        public MaterialProperty MQQuantized;
         public MaterialProperty UseAlphaClip;
         public MaterialProperty Cutoff;
         public MaterialProperty Cull;
@@ -221,6 +222,7 @@ public class ARMLitShaderEditor : BaseShaderGUI
     private void DrawSurfaceOptionsSection()
     {
         materialEditorRef.ShaderProperty(props.Brightness, "Brightness");
+        materialEditorRef.ShaderProperty(props.MQQuantized, "Use Quantized Normals");
         EditorGUILayout.Space(SectionSpacing);
         materialEditorRef.ShaderProperty(props.UseAlphaClip, "Use Alpha Clip");
         if (props.UseAlphaClip.floatValue == 1)
@@ -290,6 +292,7 @@ public class ARMLitShaderEditor : BaseShaderGUI
         SetKeyword(material, "_USETOKSVIG", props.UseToksvig.floatValue == 1);
         SetKeyword(material, "_ADDITIONALMAP", props.AdditionalMap.textureValue != null);
         SetKeyword(material, "_EMISSION", props.EmissionMap.textureValue != null);
+        SetKeyword(material, "_MQ_QUANTIZED", props.MQQuantized.floatValue == 1);
         SetKeyword(material, "_MATERIAL_SPECULAR", props.UseSpecular.floatValue == 1);
         SetKeyword(material, "_SPECULAR_MAP", props.UseSpecular.floatValue == 1 && props.SpecularMap.textureValue != null);
         SetKeyword(material, "_MATERIAL_CLEARCOAT", props.UseClearcoat.floatValue == 1);
@@ -353,6 +356,7 @@ public class ARMLitShaderEditor : BaseShaderGUI
             SheenRoughness = FindProperty("_SheenRoughness"),
             SheenColorMap = FindProperty("_SheenColorMap"),
             Brightness = FindProperty("_Brightness"),
+            MQQuantized = FindProperty("_MQQuantized"),
             EmissionMap = FindProperty("_EmissionMap"),
             EmissionColor = FindProperty("_EmissionColor"),
             Cull = FindProperty("_Cull"),

@@ -10,6 +10,7 @@ Shader "CGTools/ARMLit"
         _OcclusionStrength ("Occlusion Strength", Range(0,1)) = 1.0
 
         _NormalMap ("Normal Map", 2D) = "gray"{}
+        [Toggle(_MQ_QUANTIZED)] _MQQuantized ("Use Quantized Normals", Float) = 0
         [Toggle(_USETOGSVIK)] _UseToksvig ("Use Toksvig", Float) = 0
         _ToksvigStrength ("ToksvigStrength", Range(0,1)) = 0.5
         _NormalMapScale("Normal Map Scale", Range(0,3)) = 1
@@ -74,10 +75,11 @@ Shader "CGTools/ARMLit"
 
 
             HLSLPROGRAM
-            #pragma vertex BeresnevStylizedVertex
-            #pragma fragment BeresnevStylizedFragment
+            #pragma vertex ARMLitVertex
+            #pragma fragment ARMLitFragment
 
             #pragma shader_feature_local _NORMALMAP
+            #pragma shader_feature_local _MQ_QUANTIZED
             #pragma shader_feature_local _USETOKSVIG
             #pragma shader_feature_local _ADDITIONALMAP
             #pragma shader_feature_local _MATERIAL_SPECULAR
@@ -110,6 +112,7 @@ Shader "CGTools/ARMLit"
             #include "Packages/com.barkar.cg_tools/ShaderLibrary/Surface.hlsl"
             #include "Packages/com.barkar.cg_tools/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.barkar.cg_tools/ShaderLibrary/CustomBRDF.hlsl"
+            #include "Packages/com.barkar.cg_tools/ShaderLibrary/MeshQuantization.hlsl"
 
             #if defined(LOD_FADE_CROSSFADE)
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/LODCrossFade.hlsl"
@@ -183,16 +186,23 @@ Shader "CGTools/ARMLit"
 
             const half kMinPerceptualRoughness = 0.04h;
 
-            Varyings BeresnevStylizedVertex(Attributes IN)
+            Varyings ARMLitVertex(Attributes IN)
             {
                 Varyings OUT;
                 VertexPositionInputs positionInputs = GetVertexPositionInputs(IN.positionOS);
                 OUT.positionWS.xyz = positionInputs.positionWS;
                 OUT.positionCS = positionInputs.positionCS;
 
-                VertexNormalInputs normalInputs = GetVertexNormalInputs(IN.normalOS, IN.tangentOS);
+                #if defined(_MQ_QUANTIZED)
+                float3 normalOS = MQ_DecodeNormalFromColor(IN.color);
+                float4 tangentOS = MQ_DecodeTangentFromColor(IN.color, normalOS);
+                #else
+                float3 normalOS = IN.normalOS;
+                float4 tangentOS = IN.tangentOS;
+                #endif
+                VertexNormalInputs normalInputs = GetVertexNormalInputs(normalOS, tangentOS);
                 OUT.normalWS = normalInputs.normalWS;
-                real sign = IN.tangentOS.w * GetOddNegativeScale();
+                real sign = tangentOS.w * GetOddNegativeScale();
                 OUT.tangentWS = half4(normalInputs.tangentWS.xyz, sign);
 
                 OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
@@ -204,7 +214,7 @@ Shader "CGTools/ARMLit"
                 return OUT;
             }
 
-            half4 BeresnevStylizedFragment(Varyings IN): SV_Target
+            half4 ARMLitFragment(Varyings IN): SV_Target
             {
                 half4 result = 1;
                 half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
@@ -402,11 +412,13 @@ Shader "CGTools/ARMLit"
             HLSLPROGRAM
             #pragma target 2.0
             #pragma shader_feature_fragment _USEALPHACLIP
+            #pragma shader_feature_local _MQ_QUANTIZED
 
             #pragma vertex ShadowPassVertex
             #pragma fragment ShadowPassFragment
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
             #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl"
+            #include "Packages/com.barkar.cg_tools/ShaderLibrary/MeshQuantization.hlsl"
 
             ///TODO lit input
             TEXTURE2D(_BaseMap);
@@ -445,6 +457,7 @@ Shader "CGTools/ARMLit"
                 float4 positionOS : POSITION;
                 float3 normalOS : NORMAL;
                 float2 uv : TEXCOORD0;
+                half4 color : COLOR;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
             };
 
@@ -457,7 +470,12 @@ Shader "CGTools/ARMLit"
             float4 GetShadowPositionHClip(Attributes input)
             {
                 float3 positionWS = TransformObjectToWorld(input.positionOS.xyz);
-                float3 normalWS = TransformObjectToWorldNormal(input.normalOS);
+                #if defined(_MQ_QUANTIZED)
+                float3 normalOS = MQ_DecodeNormalFromColor(input.color);
+                #else
+                float3 normalOS = input.normalOS;
+                #endif
+                float3 normalWS = TransformObjectToWorldNormal(normalOS);
 
                 #if _CASTING_PUNCTUAL_LIGHT_SHADOW
                 float3 lightDirectionWS = normalize(_LightPosition - positionWS);
