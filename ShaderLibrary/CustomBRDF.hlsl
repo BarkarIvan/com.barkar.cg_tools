@@ -2,6 +2,7 @@
 #define  CUSTOM_BRDF_INCLUDED
 
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonMaterial.hlsl"
+#include "Packages/com.barkar.cg_tools/ShaderLibrary/GltfExtensions/GltfExtensions.hlsl"
 
 TEXTURE2D(_GltfBrdfLut);
 
@@ -13,49 +14,12 @@ TEXTURE2D(_GltfBrdfLut);
 // - _GltfBrdfLut is sampled with (NoV, 1 - perceptualRoughness).
 // - Based on https://github.com/KhronosGroup/glTF-Sample-Renderer/tree/main/source/Renderer/shaders
 
-// Summary: Raise x to the 5th power (x^5).
-// Args:
-// - x: input scalar.
-float Pow5(float x)
-{
-    float x2 = x * x;
-    return x2 * x2 * x;
-}
-
-// Summary: GGX normal distribution function (NDF).
-// Args:
-// - NoH: dot(N, H) in [0..1].
-// - alphaRoughness: roughness^2 in [0..1].
-// Refs: Walter et al. 2007, "Microfacet models for refraction through rough surfaces" (GGX/Trowbridge-Reitz)
-// https://www.cs.cornell.edu/~srm/publications/EGSR07-btdf.pdf
-float Gltf_D_GGX(float NoH, float alphaRoughness)
-{
-    float alphaRoughnessSq = alphaRoughness * alphaRoughness;
-    float f = (NoH * NoH) * (alphaRoughnessSq - 1.0) + 1.0;
-    return alphaRoughnessSq / (PI * f * f);
-}
-
-// Summary: Schlick Fresnel approximation.
-// Args:
-// - f0: reflectance at normal incidence.
-// - f90: reflectance at grazing angle.
-// - VoH: dot(V, H) in [0..1].
-// Refs: Schlick 1994, "An Inexpensive BRDF Model for Physically-Based Rendering"
-// https://hal.science/inria-00075599/document
-float3 Gltf_F_Schlick(float3 f0, float3 f90, float VoH)
-{
-    float x = saturate(1.0 - VoH);
-    float x2 = x * x;
-    float x5 = x * x2 * x2;
-    return f0 + (f90 - f0) * x5;
-}
-
 // Summary: Lambertian diffuse BRDF.
 // Args:
 // - DiffuseColor: diffuse reflectance (linear).
 // Refs: Lambert, "Photometria" (1760)
 // https://archive.org/details/lambertsphotome00lambgoog
-float3 Diffuse_Lambert(float3 DiffuseColor)
+float3 Gltf_Diffuse_Lambert(float3 DiffuseColor)
 {
     return DiffuseColor * INV_PI;
 }
@@ -69,29 +33,14 @@ float3 Diffuse_Lambert(float3 DiffuseColor)
 // - LoH: dot(L, H) in [0..1].
 // Refs: Burley 2012, "Physically-Based Shading at Disney"
 // https://disneyanimation.com/publications/physically-based-shading-at-disney/
-// Note: Optional replacement for Diffuse_Lambert in GltfDirectBRDF (requires LoH).
-float3 Diffuse_Burley(float3 albedo, float pr, float NoV, float NoL, float LoH)
+// Note: Optional replacement for Gltf_Diffuse_Lambert in GltfDirectBRDF (requires LoH).
+float3 Gltf_Diffuse_Burley(float3 albedo, float pr, float NoV, float NoL, float LoH)
 {
     // pr = perceptual roughness (0..1)
     float FD90 = 0.5 + 2.0 * pr * LoH * LoH;
-    float FdV  = 1.0 + (FD90 - 1.0) * Pow5(1.0 - NoV);
-    float FdL  = 1.0 + (FD90 - 1.0) * Pow5(1.0 - NoL);
+    float FdV  = 1.0 + (FD90 - 1.0) * Gltf_Pow5(1.0 - NoV);
+    float FdL  = 1.0 + (FD90 - 1.0) * Gltf_Pow5(1.0 - NoL);
     return albedo * (FdV * FdL) * INV_PI;
-}
-
-// Summary: Smith masking-shadowing for GGX.
-// Args:
-// - NoL: dot(N, L) in [0..1].
-// - NoV: dot(N, V) in [0..1].
-// - alphaRoughness: roughness^2 in [0..1].
-// Refs: Heitz 2014, "Understanding the Masking-Shadowing Function in Microfacet-Based BRDFs"
-// https://jcgt.org/published/0003/02/03/
-float Gltf_G_Smith(float NoL, float NoV, float alphaRoughness)
-{
-    float r = alphaRoughness;
-    float attenuationL = 2.0 * NoL / (NoL + sqrt(r * r + (1.0 - r * r) * (NoL * NoL)));
-    float attenuationV = 2.0 * NoV / (NoV + sqrt(r * r + (1.0 - r * r) * (NoV * NoV)));
-    return attenuationL * attenuationV;
 }
 
 // Summary: Sample BRDF integration LUT (split-sum).
@@ -106,14 +55,29 @@ float2 Gltf_SampleGGXLUT(float NoV, float perceptualRoughness)
     return SAMPLE_TEXTURE2D(_GltfBrdfLut, sampler_LinearClamp, uv).rg;
 }
 
+float3 Gltf_GetIBLGGXFresnel(float NoV, float perceptualRoughness, float3 F0, float specularWeight)
+{
+    float2 f_ab = Gltf_SampleGGXLUT(NoV, perceptualRoughness);
+    float3 Fr = max(float3(1.0 - perceptualRoughness, 1.0 - perceptualRoughness, 1.0 - perceptualRoughness), F0) - F0;
+    float3 k_S = F0 + Fr * Gltf_Pow5(1.0 - NoV);
+    float3 FssEss = specularWeight * (k_S * f_ab.x + f_ab.y);
+
+    float Ems = 1.0 - (f_ab.x + f_ab.y);
+    float3 F_avg = specularWeight * (F0 + (1.0 - F0) / 21.0);
+    float3 FmsEms = Ems * FssEss * F_avg / max(1.0 - F_avg * Ems, 1e-5);
+
+    return FssEss + FmsEms;
+}
+
 // Summary: glTF IBL using split-sum LUT and URP reflection probes.
 // Args:
 // - ld: lighting data (expects N, V).
 // - sd: surface data (albedo, metallic, roughness, specular).
 // - envRotation: unused (kept for compatibility).
 // - positionWS: world position for reflection probe sampling.
+// - normalizedScreenSpaceUV: screen UV for Forward+ reflection probes.
 // - indirectDiffuse: baked GI or SH diffuse.
-half3 GltfIBL(CustomLitData ld, CustomSurfaceData sd, float envRotation, float3 positionWS, half3 indirectDiffuse)
+half3 GltfIBL(CustomLitData ld, CustomSurfaceData sd, float envRotation, float3 positionWS, float2 normalizedScreenSpaceUV, half3 indirectDiffuse)
 {
     float3 N = ld.N;
     float3 V = ld.V;
@@ -124,15 +88,63 @@ half3 GltfIBL(CustomLitData ld, CustomSurfaceData sd, float envRotation, float3 
     float3 R = reflect(-V, N);
 
     // Diffuse IBL (glTF split-sum)
-    float3 diffuseColor = sd.albedo * (1.0 - kDielectricSpec.rgb) * (1.0 - sd.metallic);
+    float3 diffuseColor = sd.albedo * (1.0 - sd.metallic);
     float3 diffuseTerm  = indirectDiffuse * diffuseColor;
 
     // Specular IBL
-    half3  specularLD   = GlossyEnvironmentReflection(R, positionWS, pr, 1.0);
-    float2 brdf         = Gltf_SampleGGXLUT(NoV, pr);
-    float3 specularTerm = specularLD * (sd.specular * brdf.x + brdf.y);
+#if defined(_MATERIAL_ANISOTROPY)
+    float3 specularLD = Gltf_GetIBLRadianceAnisotropy(N, V, pr, sd.anisotropyStrength, sd.anisotropicB, positionWS, normalizedScreenSpaceUV);
+#else
+    float3 specularLD = Gltf_GlossyEnvironmentReflection(R, positionWS, pr, 1.0, normalizedScreenSpaceUV);
+#endif
+    float3 fresnelMetal = Gltf_GetIBLGGXFresnel(NoV, pr, sd.albedo, 1.0);
+    float3 fresnelDiel  = Gltf_GetIBLGGXFresnel(NoV, pr, sd.specularColor, sd.specularWeight);
+    float3 dielectricIBL = lerp(diffuseTerm, specularLD, fresnelDiel);
+    float3 metalIBL      = specularLD * fresnelMetal;
 
-    return diffuseTerm + specularTerm;
+#if defined(_MATERIAL_IRIDESCENCE)
+    float iridescenceFactor = sd.iridescenceFactor;
+    if (sd.iridescenceThickness <= 0.0)
+    {
+        iridescenceFactor = 0.0;
+    }
+    if (iridescenceFactor > 0.0)
+    {
+        float3 iridescenceFresnelDielectric = Gltf_EvalIridescence(1.0, sd.iridescenceIor, NoV, sd.iridescenceThickness, sd.specularColor);
+        float3 iridescenceFresnelMetal = Gltf_EvalIridescence(1.0, sd.iridescenceIor, NoV, sd.iridescenceThickness, sd.albedo);
+        float3 dielectricIri = Gltf_RgbMix(diffuseTerm, specularLD, iridescenceFresnelDielectric);
+        float3 metalIri = specularLD * iridescenceFresnelMetal;
+        dielectricIBL = lerp(dielectricIBL, dielectricIri, iridescenceFactor);
+        metalIBL = lerp(metalIBL, metalIri, iridescenceFactor);
+    }
+#endif
+
+    float3 color = lerp(dielectricIBL, metalIBL, sd.metallic);
+
+#if defined(_MATERIAL_SHEEN)
+    float maxSheen = Gltf_Max3(sd.sheenColor);
+    if (maxSheen > 0.0)
+    {
+        float albedoSheenScaling = 1.0 - maxSheen * Gltf_SampleSheenELUT(NoV, sd.sheenRoughness);
+        float sheenBrdf = Gltf_SampleCharlieLUT(NoV, sd.sheenRoughness);
+        float3 sheenSpecular = Gltf_GlossyEnvironmentReflection(R, positionWS, sd.sheenRoughness, 1.0, normalizedScreenSpaceUV) *
+            (sd.sheenColor * sheenBrdf);
+        color = sheenSpecular + color * albedoSheenScaling;
+    }
+#endif
+
+#if defined(_MATERIAL_CLEARCOAT)
+    if (sd.clearcoatFactor > 0.0)
+    {
+        float3 Rc = reflect(-V, sd.clearcoatNormal);
+        float ccNoV = clamp(abs(dot(sd.clearcoatNormal, V)), 0.001, 1.0);
+        float3 clearcoatF = Gltf_F_Schlick(kDielectricSpec.rgb, float3(1.0, 1.0, 1.0), ccNoV);
+        half3 clearcoatSpecular = Gltf_GlossyEnvironmentReflection(Rc, positionWS, sd.clearcoatRoughness, 1.0, normalizedScreenSpaceUV);
+        color = lerp(color, clearcoatSpecular, sd.clearcoatFactor * clearcoatF);
+    }
+#endif
+
+    return color;
 }
 
 // Summary: Direct lighting BRDF for one light (glTF spec).
@@ -155,19 +167,67 @@ half3 GltfDirectBRDF(CustomLitData ld, CustomSurfaceData sd, half3 L, half3 ligh
     float LoH = saturate(dot(H, L));
     float3 radiance = lightColor * atten; 
 
-    float3 diffuseColor = sd.albedo * (1.0 - kDielectricSpec.rgb) * (1.0 - sd.metallic);
-    float3 specularColor = sd.specular;
+    float3 diffuseColor = sd.albedo * (1.0 - sd.metallic);
+    float3 dielectricF0 = sd.specularColor * sd.specularWeight;
+    float3 dielectricF = Gltf_F_Schlick(dielectricF0, float3(sd.specularWeight, sd.specularWeight, sd.specularWeight), VoH);
+    float3 metalF = Gltf_F_Schlick(sd.albedo, float3(1.0, 1.0, 1.0), VoH);
+    float3 diffuseContrib = Gltf_Diffuse_Burley(diffuseColor, pr, NoV, NoL, LoH);
 
-    float reflectance = max(max(specularColor.r, specularColor.g), specularColor.b);
-    float reflectance90 = saturate(reflectance * 25.0);
-    float3 F = Gltf_F_Schlick(specularColor, reflectance90.xxx, VoH);
+#if defined(_MATERIAL_ANISOTROPY)
+    float3 specContrib = Gltf_BRDF_SpecularGGX_Anisotropy(alphaRoughness, sd.anisotropyStrength, ld.N, ld.V, L, H, sd.anisotropicT, sd.anisotropicB);
+#else
     float G = Gltf_G_Smith(NoL, NoV, alphaRoughness);
     float D = Gltf_D_GGX(NoH, alphaRoughness);
+    float3 specContrib = G * D / (4.0 * NoL * NoV);
+#endif
 
-    float3 diffuseContrib = (1.0 - F) * Diffuse_Burley(diffuseColor, pr, NoV, NoL, LoH );//Diffuse_Lambert(diffuseColor);
-    float3 specContrib = F * G * D / (4.0 * NoL * NoV);
-    float3 color = (diffuseContrib + specContrib) * radiance * NoL;
+    float3 dielectricBrdf = lerp(diffuseContrib, specContrib, dielectricF);
+    float3 metalBrdf = specContrib * metalF;
 
-    return color;
+#if defined(_MATERIAL_IRIDESCENCE)
+    float iridescenceFactor = sd.iridescenceFactor;
+    if (sd.iridescenceThickness <= 0.0)
+    {
+        iridescenceFactor = 0.0;
+    }
+    if (iridescenceFactor > 0.0)
+    {
+        float3 iridescenceFresnelDielectric = Gltf_EvalIridescence(1.0, sd.iridescenceIor, NoV, sd.iridescenceThickness, sd.specularColor);
+        float3 iridescenceFresnelMetal = Gltf_EvalIridescence(1.0, sd.iridescenceIor, NoV, sd.iridescenceThickness, sd.albedo);
+        float3 dielectricIri = Gltf_RgbMix(diffuseContrib, specContrib, iridescenceFresnelDielectric);
+        float3 metalIri = specContrib * iridescenceFresnelMetal;
+        dielectricBrdf = lerp(dielectricBrdf, dielectricIri, iridescenceFactor);
+        metalBrdf = lerp(metalBrdf, metalIri, iridescenceFactor);
+    }
+#endif
+
+    float3 color = lerp(dielectricBrdf, metalBrdf, sd.metallic);
+
+#if defined(_MATERIAL_SHEEN)
+    float maxSheen = Gltf_Max3(sd.sheenColor);
+    if (maxSheen > 0.0)
+    {
+        float albedoSheenScalingV = 1.0 - maxSheen * Gltf_SampleSheenELUT(NoV, sd.sheenRoughness);
+        float albedoSheenScalingL = 1.0 - maxSheen * Gltf_SampleSheenELUT(NoL, sd.sheenRoughness);
+        float albedoSheenScaling = min(albedoSheenScalingV, albedoSheenScalingL);
+        float3 sheenBrdf = Gltf_BRDF_SpecularSheen(sd.sheenColor, sd.sheenRoughness, NoL, NoV, NoH);
+        color = sheenBrdf + color * albedoSheenScaling;
+    }
+#endif
+
+#if defined(_MATERIAL_CLEARCOAT)
+    if (sd.clearcoatFactor > 0.0)
+    {
+        float3 Hc = SafeNormalize(ld.V + L);
+        float ccNoL = clamp(dot(sd.clearcoatNormal, L), 0.001, 1.0);
+        float ccNoV = clamp(abs(dot(sd.clearcoatNormal, ld.V)), 0.001, 1.0);
+        float ccNoH = saturate(dot(sd.clearcoatNormal, Hc));
+        float3 clearcoatBrdf = Gltf_ClearcoatSpecular(sd.clearcoatRoughness, ccNoL, ccNoV, ccNoH);
+        float3 clearcoatF = Gltf_F_Schlick(kDielectricSpec.rgb, float3(1.0, 1.0, 1.0), ccNoV);
+        color = lerp(color, clearcoatBrdf, sd.clearcoatFactor * clearcoatF);
+    }
+#endif
+
+    return color * radiance * NoL;
 }
 #endif

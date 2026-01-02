@@ -21,6 +21,7 @@ struct CustomSurfaceData
     half  roughness;
     half  occlusion; //AO
     half  alpha;
+#include "Packages/com.barkar.cg_tools/ShaderLibrary/GltfExtensions/GltfSurfaceFields.hlsl"
 };
 
 #endif

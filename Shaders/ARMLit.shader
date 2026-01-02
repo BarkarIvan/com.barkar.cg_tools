@@ -3,10 +3,10 @@ Shader "CGTools/ARMLit"
     Properties
     {
 
-        _BaseMap ("Albedo", 2D) = "white"{}
+        _BaseMap ("Albedo (RGB) Alpha (A)", 2D) = "white"{}
         _BaseColor ("Color", Color) = (1,1,1,1)
 
-        _AdditionalMap ("ARM Map", 2D) = "white"{}
+        _AdditionalMap ("ARM Map (R=AO G=Roughness B=Metallic)", 2D) = "white"{}
         _OcclusionStrength ("Occlusion Strength", Range(0,1)) = 1.0
 
         _NormalMap ("Normal Map", 2D) = "gray"{}
@@ -17,8 +17,38 @@ Shader "CGTools/ARMLit"
         _Metallic("Metallic", Range(0.0, 1.0)) = 0.0
         _Roughness( "Roughness", Range(0,1)) = 0.0
 
+        [Toggle(_MATERIAL_SPECULAR)] _UseSpecular ("Use Specular (glTF)", Float) = 0
+        _SpecularFactor ("Specular Factor", Range(0,1)) = 1.0
+        _SpecularColor ("Specular Color", Color) = (1,1,1,1)
+        _SpecularMap ("Specular Map (RGBA: RGB=Color A=Factor)", 2D) = "white"{}
+
+        [Toggle(_MATERIAL_CLEARCOAT)] _UseClearcoat ("Use Clearcoat (glTF)", Float) = 0
+        _ClearcoatFactor ("Clearcoat Factor", Range(0,1)) = 0.0
+        _ClearcoatRoughness ("Clearcoat Roughness", Range(0,1)) = 0.0
+        _ClearcoatMap ("Clearcoat Map (R=Factor G=Roughness)", 2D) = "white"{}
+        _ClearcoatNormalMap ("Clearcoat Normal Map", 2D) = "bump"{}
+        _ClearcoatNormalScale ("Clearcoat Normal Scale", Range(0,3)) = 1.0
+
+        [Toggle(_MATERIAL_IRIDESCENCE)] _UseIridescence ("Use Iridescence (glTF)", Float) = 0
+        _IridescenceFactor ("Iridescence Factor", Range(0,1)) = 0.0
+        _IridescenceIor ("Iridescence IOR", Range(1.0,3.0)) = 1.3
+        _IridescenceThicknessMin ("Iridescence Thickness Min (nm)", Range(0,1200)) = 100.0
+        _IridescenceThicknessMax ("Iridescence Thickness Max (nm)", Range(0,1200)) = 400.0
+        _IridescenceMap ("Iridescence Map (R=Factor)", 2D) = "white"{}
+        _IridescenceThicknessMap ("Iridescence Thickness Map (G=Thickness)", 2D) = "white"{}
+
+        [Toggle(_MATERIAL_ANISOTROPY)] _UseAnisotropy ("Use Anisotropy (glTF)", Float) = 0
+        _AnisotropyStrength ("Anisotropy Strength", Range(0,1)) = 0.0
+        _AnisotropyRotation ("Anisotropy Rotation (Rad)", Range(0,6.283185)) = 0.0
+        _AnisotropyMap ("Anisotropy Map (RGB: XY Dir B=Strength)", 2D) = "white"{}
+
+        [Toggle(_MATERIAL_SHEEN)] _UseSheen ("Use Sheen (glTF)", Float) = 0
+        _SheenColor ("Sheen Color", Color) = (0,0,0,1)
+        _SheenRoughness ("Sheen Roughness", Range(0,1)) = 0.0
+        _SheenColorMap ("Sheen Map (RGBA: RGB=Color A=Roughness)", 2D) = "white"{}
+
         [HDR] _EmissionColor ("Emission", Color) = (1,1,1,1)
-        _EmissionMap ("EmissionMap", 2D) = "black"{}
+        _EmissionMap ("Emission Map (RGB)", 2D) = "black"{}
 
         _Brightness("Brightness", Range(0,2)) = 1
 
@@ -63,13 +93,25 @@ Shader "CGTools/ARMLit"
             #pragma shader_feature_local _NORMALMAP
             #pragma shader_feature_local _USETOKSVIG
             #pragma shader_feature_local _ADDITIONALMAP
+            #pragma shader_feature_local _MATERIAL_SPECULAR
+            #pragma shader_feature_local _SPECULAR_MAP
+            #pragma shader_feature_local _MATERIAL_CLEARCOAT
+            #pragma shader_feature_local _CLEARCOAT_MAP
+            #pragma shader_feature_local _CLEARCOAT_NORMALMAP
+            #pragma shader_feature_local _MATERIAL_IRIDESCENCE
+            #pragma shader_feature_local _IRIDESCENCE_MAP
+            #pragma shader_feature_local _IRIDESCENCE_THICKNESS_MAP
+            #pragma shader_feature_local _MATERIAL_ANISOTROPY
+            #pragma shader_feature_local _ANISOTROPY_MAP
+            #pragma shader_feature_local _MATERIAL_SHEEN
+            #pragma shader_feature_local _SHEEN_COLOR_MAP
             #pragma shader_feature_fragment _EMISSION
             #pragma shader_feature_fragment _USEALPHACLIP
 
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE
             #pragma multi_compile _ _ADDITIONAL_LIGHTS
             #pragma multi_compile _ EVALUATE_SH_MIXED EVALUATE_SH_VERTE
-            // #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
+            #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
             #pragma multi_compile _ DIRLIGHTMAP_COMBINED
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_BLENDING
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_BOX_PROJECTION
@@ -82,6 +124,7 @@ Shader "CGTools/ARMLit"
             #pragma exclude_renderers d3d11_9x
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
+            #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RealtimeLights.hlsl"
             #include "Packages/com.barkar.cg_tools/ShaderLibrary/Surface.hlsl"
             #include "Packages/com.barkar.cg_tools/ShaderLibrary/Lighting.hlsl"
             #include "Packages/com.barkar.cg_tools/ShaderLibrary/CustomBRDF.hlsl"
@@ -96,6 +139,20 @@ Shader "CGTools/ARMLit"
             SAMPLER(sampler_BaseMap);
             TEXTURE2D(_AdditionalMap);
             SAMPLER(sampler_AdditionalMap);
+            TEXTURE2D(_SpecularMap);
+            SAMPLER(sampler_SpecularMap);
+            TEXTURE2D(_ClearcoatMap);
+            SAMPLER(sampler_ClearcoatMap);
+            TEXTURE2D(_ClearcoatNormalMap);
+            SAMPLER(sampler_ClearcoatNormalMap);
+            TEXTURE2D(_IridescenceMap);
+            SAMPLER(sampler_IridescenceMap);
+            TEXTURE2D(_IridescenceThicknessMap);
+            SAMPLER(sampler_IridescenceThicknessMap);
+            TEXTURE2D(_AnisotropyMap);
+            SAMPLER(sampler_AnisotropyMap);
+            TEXTURE2D(_SheenColorMap);
+            SAMPLER(sampler_SheenColorMap);
             TEXTURE2D(_NormalMap);
             SAMPLER(sampler_NormalMap);
             TEXTURE2D(_EmissionMap);
@@ -110,6 +167,19 @@ Shader "CGTools/ARMLit"
                 half _Metallic;
                 half _Roughness;
                 half _OcclusionStrength;
+                half4 _SpecularColor;
+                half _SpecularFactor;
+                half _ClearcoatFactor;
+                half _ClearcoatRoughness;
+                half _ClearcoatNormalScale;
+                half _IridescenceFactor;
+                float _IridescenceIor;
+                float _IridescenceThicknessMin;
+                float _IridescenceThicknessMax;
+                half _AnisotropyStrength;
+                float _AnisotropyRotation;
+                half4 _SheenColor;
+                half _SheenRoughness;
                 half _Cutoff;
                 half _NormalMapScale;
                 half _ToksvigStrength;
@@ -183,7 +253,8 @@ Shader "CGTools/ARMLit"
                 litData.V = normalize(_WorldSpaceCameraPos - IN.positionWS);
                 litData.positionWS = IN.positionWS;
                 litData.T = SafeNormalize(IN.tangentWS.xyz);
-                litData.N = SafeNormalize(IN.normalWS);
+                float3 geomNormalWS = SafeNormalize(IN.normalWS);
+                litData.N = geomNormalWS;
                 half sgn = IN.tangentWS.w;
                 litData.B = sgn * cross(litData.N.xyz, litData.T.xyz);;
 
@@ -224,7 +295,96 @@ Shader "CGTools/ARMLit"
 
                 #endif
 
-                surfaceData.specular = lerp(kDielectricSpec.rgb, surfaceData.albedo, surfaceData.metallic);
+                surfaceData.specularWeight = 1.0;
+                surfaceData.specularColor = kDielectricSpec.rgb;
+                surfaceData.clearcoatFactor = 0.0;
+                surfaceData.clearcoatRoughness = 0.0;
+                surfaceData.clearcoatNormal = geomNormalWS;
+                surfaceData.iridescenceFactor = 0.0;
+                surfaceData.iridescenceIor = 1.3;
+                surfaceData.iridescenceThickness = 0.0;
+                surfaceData.anisotropyStrength = 0.0;
+                surfaceData.anisotropicT = litData.T;
+                surfaceData.anisotropicB = litData.B;
+                surfaceData.sheenColor = float3(0.0, 0.0, 0.0);
+                surfaceData.sheenRoughness = 0.0;
+
+                #if defined(_MATERIAL_SPECULAR)
+                surfaceData.specularWeight = _SpecularFactor;
+                surfaceData.specularColor = kDielectricSpec.rgb * _SpecularColor.rgb;
+                #if defined(_SPECULAR_MAP)
+                half4 specularMap = SAMPLE_TEXTURE2D(_SpecularMap, sampler_SpecularMap, IN.uv);
+                surfaceData.specularWeight *= specularMap.a;
+                surfaceData.specularColor *= specularMap.rgb;
+                #endif
+                surfaceData.specularColor = min(surfaceData.specularColor, 1.0);
+                #endif
+
+                #if defined(_MATERIAL_CLEARCOAT)
+                surfaceData.clearcoatFactor = _ClearcoatFactor;
+                surfaceData.clearcoatRoughness = _ClearcoatRoughness;
+                #if defined(_CLEARCOAT_MAP)
+                half4 clearcoatMap = SAMPLE_TEXTURE2D(_ClearcoatMap, sampler_ClearcoatMap, IN.uv);
+                surfaceData.clearcoatFactor *= clearcoatMap.r;
+                surfaceData.clearcoatRoughness *= clearcoatMap.g;
+                #endif
+                #if defined(_CLEARCOAT_NORMALMAP)
+                half3x3 clearcoatTBN = half3x3(litData.T.xyz, litData.B.xyz, geomNormalWS);
+                half4 clearcoatNormalSample = SAMPLE_TEXTURE2D(_ClearcoatNormalMap, sampler_ClearcoatNormalMap, IN.uv);
+                half3 clearcoatNormalTS = UnpackNormalScale(clearcoatNormalSample, _ClearcoatNormalScale);
+                surfaceData.clearcoatNormal = SafeNormalize(mul(clearcoatNormalTS, clearcoatTBN));
+                #endif
+                surfaceData.clearcoatRoughness = saturate(surfaceData.clearcoatRoughness);
+                #endif
+
+                #if defined(_MATERIAL_IRIDESCENCE)
+                surfaceData.iridescenceFactor = _IridescenceFactor;
+                surfaceData.iridescenceIor = _IridescenceIor;
+                surfaceData.iridescenceThickness = _IridescenceThicknessMax;
+                #if defined(_IRIDESCENCE_MAP)
+                surfaceData.iridescenceFactor *= SAMPLE_TEXTURE2D(_IridescenceMap, sampler_IridescenceMap, IN.uv).r;
+                #endif
+                #if defined(_IRIDESCENCE_THICKNESS_MAP)
+                float iridescenceThicknessSample = SAMPLE_TEXTURE2D(_IridescenceThicknessMap, sampler_IridescenceThicknessMap, IN.uv).g;
+                surfaceData.iridescenceThickness = lerp(_IridescenceThicknessMin, _IridescenceThicknessMax, iridescenceThicknessSample);
+                #endif
+                surfaceData.iridescenceFactor = saturate(surfaceData.iridescenceFactor);
+                #endif
+
+                #if defined(_MATERIAL_ANISOTROPY)
+                surfaceData.anisotropyStrength = _AnisotropyStrength;
+                float2 anisotropyDirection = float2(1.0, 0.0);
+                float anisotropyStrengthFactor = 1.0;
+                #if defined(_ANISOTROPY_MAP)
+                float3 anisotropySample = SAMPLE_TEXTURE2D(_AnisotropyMap, sampler_AnisotropyMap, IN.uv).rgb;
+                anisotropyDirection = anisotropySample.xy * 2.0 - 1.0;
+                anisotropyStrengthFactor = anisotropySample.z;
+                #endif
+                float anisotropyCos = cos(_AnisotropyRotation);
+                float anisotropySin = sin(_AnisotropyRotation);
+                float2 anisotropyDirRot = float2(
+                    anisotropyDirection.x * anisotropyCos - anisotropyDirection.y * anisotropySin,
+                    anisotropyDirection.x * anisotropySin + anisotropyDirection.y * anisotropyCos
+                );
+                surfaceData.anisotropicT = SafeNormalize(litData.T * anisotropyDirRot.x + litData.B * anisotropyDirRot.y);
+                surfaceData.anisotropicB = SafeNormalize(cross(geomNormalWS, surfaceData.anisotropicT));
+                surfaceData.anisotropyStrength = saturate(surfaceData.anisotropyStrength * anisotropyStrengthFactor);
+                #endif
+
+                #if defined(_MATERIAL_SHEEN)
+                surfaceData.sheenColor = _SheenColor.rgb;
+                surfaceData.sheenRoughness = _SheenRoughness;
+                #if defined(_SHEEN_COLOR_MAP)
+                half4 sheenMap = SAMPLE_TEXTURE2D(_SheenColorMap, sampler_SheenColorMap, IN.uv);
+                surfaceData.sheenColor *= sheenMap.rgb;
+                surfaceData.sheenRoughness *= sheenMap.a;
+                #endif
+                surfaceData.sheenRoughness = saturate(surfaceData.sheenRoughness);
+                #endif
+
+                surfaceData.specular = lerp(surfaceData.specularColor * surfaceData.specularWeight,
+                                            surfaceData.albedo,
+                                            surfaceData.metallic);
 
 
                 #if defined (_USEALPHACLIP)
@@ -236,30 +396,40 @@ Shader "CGTools/ARMLit"
                 half3 indirectDiffuse = SAMPLE_GI(IN.lightmapUV, IN.SH, litData.N);
 
                 MixRealtimeAndBakedGI(mainLight, litData.N, indirectDiffuse);
-                half3 envPbr = GltfIBL(litData, surfaceData, 0, IN.positionWS, indirectDiffuse);
+                float2 normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(IN.positionCS);
+                half3 envPbr = GltfIBL(litData, surfaceData, 0, IN.positionWS, normalizedScreenSpaceUV, indirectDiffuse);
+                #if defined (_ADDITIONALMAP)
+                envPbr = lerp(envPbr, envPbr * surfaceData.occlusion, _OcclusionStrength);
+                #endif
                 half3 directPbr = GltfDirectBRDF(litData, surfaceData, mainLight.direction, mainLight.color,
                                                                    mainLight.shadowAttenuation);
 
-                //WIP!
-                //TODO Forward + 
+               
                 #if defined(_ADDITIONAL_LIGHTS)
-                half3 additionalLights = 0;
-                int lightCount = GetAdditionalLightsCount();
+                InputData inputData = (InputData)0;
+                inputData.positionWS = IN.positionWS;
+                inputData.normalWS = litData.N;
+                inputData.viewDirectionWS = litData.V;
+                inputData.normalizedScreenSpaceUV = normalizedScreenSpaceUV;
 
+                #if USE_CLUSTER_LIGHT_LOOP
+                UNITY_LOOP for (uint lightIndex = 0u; lightIndex < min(URP_FP_DIRECTIONAL_LIGHTS_COUNT, MAX_VISIBLE_LIGHTS); ++lightIndex)
+                {
+                    Light additionalLight = GetAdditionalLight(lightIndex, inputData.positionWS, half4(1, 1, 1, 1));
+                    directPbr += GltfDirectBRDF(litData, surfaceData, additionalLight.direction, additionalLight.color,
+                        additionalLight.distanceAttenuation * additionalLight.shadowAttenuation);
+                }
+                #endif
 
-                LIGHT_LOOP_BEGIN(lightCount)
-                    Light addlight = GetAdditionalPerObjectLight(lightIndex, IN.positionWS);
-                    directPbr += GltfDirectBRDF(litData, surfaceData, addlight.direction, addlight.color,
-      addlight.distanceAttenuation);
+                uint pixelLightCount = GetAdditionalLightsCount();
+                LIGHT_LOOP_BEGIN(pixelLightCount)
+                    Light additionalLight = GetAdditionalLight(lightIndex, inputData.positionWS, half4(1, 1, 1, 1));
+                    directPbr += GltfDirectBRDF(litData, surfaceData, additionalLight.direction, additionalLight.color,
+                        additionalLight.distanceAttenuation * additionalLight.shadowAttenuation);
                 LIGHT_LOOP_END
-
-
                 #endif
                 
                 result.rgb = directPbr + envPbr; //saturate only for Metal api?
-                #if defined (_ADDITIONALMAP)
-                result.rgb = lerp(result.rgb, result.rgb * surfaceData.occlusion, _OcclusionStrength);
-                #endif
                 //Emission
                 half3 emissionColor = _EmissionColor.rgb;
                 #if defined(_EMISSION)
@@ -323,6 +493,8 @@ Shader "CGTools/ARMLit"
                 half _Brightness;
                 half _Metallic;
                 half _Roughness;
+                half4 _SpecularColor;
+                half _SpecularFactor;
                 half _Cutoff;
                 half _NormalMapScale;
             CBUFFER_END
@@ -444,6 +616,8 @@ Shader "CGTools/ARMLit"
                 half _Brightness;
                 half _Metallic;
                 half _Roughness;
+                half4 _SpecularColor;
+                half _SpecularFactor;
                 half _Cutoff;
                 half _NormalMapScale;
             CBUFFER_END
