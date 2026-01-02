@@ -158,10 +158,26 @@ namespace MeshQuantization
 
             ReadableRequested.Remove(assetPath);
 
+            if (settings.disableReadWrite && (quantized > 0 || skipped > 0))
+                DisableReadWrite(assetPath);
+
             if (quantized > 0)
                 Debug.Log($"Mesh quantization auto-import: {assetPath} meshes={totalMeshes} quantized={quantized} skipped={skipped} failed={failed}");
             else if (failed > 0)
                 Debug.LogWarning($"Mesh quantization auto-import: {assetPath} meshes={totalMeshes} quantized={quantized} skipped={skipped} failed={failed}");
+        }
+
+        private static void DisableReadWrite(string assetPath)
+        {
+            if (!(AssetImporter.GetAtPath(assetPath) is ModelImporter modelImporter))
+                return;
+
+            if (!modelImporter.isReadable)
+                return;
+
+            modelImporter.isReadable = false;
+            AssetDatabase.WriteImportSettingsIfDirty(assetPath);
+            Debug.Log($"Mesh quantization auto-import: disabled Read/Write for {assetPath}");
         }
     }
 }
