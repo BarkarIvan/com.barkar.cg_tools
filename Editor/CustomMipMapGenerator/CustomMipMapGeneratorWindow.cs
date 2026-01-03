@@ -36,8 +36,9 @@ public class CustomMipMapGeneratorWindow : EditorWindow
     private static readonly GUIContent SharpenClampLabel = new GUIContent("Sharpen Clamp", "Clamp overshoot to limit ringing.");
     private static readonly GUIContent SharpenMipsLabel = new GUIContent("Sharpen Mips", "Number of mip levels to sharpen.");
     private static readonly GUIContent SharpenNormalsLabel = new GUIContent("Sharpen Normals", "Apply sharpening to normal maps.");
-    private static readonly GUIContent AlphaFilterModeLabel = new GUIContent("Alpha Filter Mode", "None = filter alpha normally. PreserveCoverage = keep alpha-clip coverage. MaxFilter = dilate alpha.");
-    private static readonly GUIContent AlphaClipLabel = new GUIContent("Alpha Clip", "Alpha threshold used for coverage preservation.");
+    private static readonly GUIContent AlphaFilterModeLabel = new GUIContent("Alpha Filter Mode", "None = filter alpha normally. PreserveCoverage = keep alpha-clip coverage. MaxFilter = dilate alpha. AlphaPyramid = binary alpha pattern for alpha testing. ErrorDiffusion = Floyd-Steinberg dither for alpha testing.");
+    private static readonly GUIContent AlphaClipLabel = new GUIContent("Alpha Clip", "Alpha threshold used for coverage preservation, Alpha Pyramid, and Error Diffusion.");
+    private static readonly GUIContent AlphaDitherNoiseLabel = new GUIContent("Alpha Dither Noise", "Random noise strength for Error Diffusion (0 disables).");
     private static readonly GUIContent MaxFilterMinLabel = new GUIContent("Min Radius", "Minimum dilation radius for MaxFilter alpha.");
     private static readonly GUIContent MaxFilterMaxLabel = new GUIContent("Max Radius", "Maximum dilation radius for MaxFilter alpha.");
     private static readonly GUIContent MaxFilterStepLabel = new GUIContent("Increase Every N Mip Levels", "Increase dilation radius after every N mip levels.");
@@ -80,6 +81,10 @@ public class CustomMipMapGeneratorWindow : EditorWindow
         "// дальше используй `rough` как обычно в GGX";
     private const string ToksvigAlphaFilterWarning =
         "Toksvig uses alpha. Alpha filter is forced to None while enabled.";
+    private const string AlphaPyramidHelpText =
+        "Alpha Pyramid outputs binary alpha per mip for alpha testing. Best with Alpha Clip = 0.5.";
+    private const string ErrorDiffusionHelpText =
+        "Error Diffusion (Floyd-Steinberg) dithers alpha per mip into a binary pattern for alpha testing.";
     private const string DataMapHelpText =
         "Packed/Data Map is treated as linear data (no sRGB/gamma correction). Use per-channel Preserve Coverage for cutout masks.";
     private const string PerChannelHelpText =
@@ -198,9 +203,18 @@ public class CustomMipMapGeneratorWindow : EditorWindow
             EditorGUI.EndDisabledGroup();
             if (toksvigActive)
                 EditorGUILayout.HelpBox(ToksvigAlphaFilterWarning, MessageType.Info);
-            if (settings.alphaFilterMode == AlphaFilterMode.PreserveCoverage)
+            if (settings.alphaFilterMode == AlphaFilterMode.PreserveCoverage
+                || settings.alphaFilterMode == AlphaFilterMode.AlphaPyramid
+                || settings.alphaFilterMode == AlphaFilterMode.ErrorDiffusion)
                 settings.alphaClip = EditorGUILayout.Slider(AlphaClipLabel, settings.alphaClip, 0f, 1f);
-      
+            if (settings.alphaFilterMode == AlphaFilterMode.AlphaPyramid)
+                EditorGUILayout.HelpBox(AlphaPyramidHelpText, MessageType.Info);
+            if (settings.alphaFilterMode == AlphaFilterMode.ErrorDiffusion)
+            {
+                settings.alphaDitherNoise = EditorGUILayout.Slider(AlphaDitherNoiseLabel, settings.alphaDitherNoise, 0f, 0.02f);
+                EditorGUILayout.HelpBox(ErrorDiffusionHelpText, MessageType.Info);
+            }
+
             if (settings.alphaFilterMode == AlphaFilterMode.MaxFilter)
             {
                 GUILayout.Label("Auto Max Filter Radius", EditorStyles.boldLabel);

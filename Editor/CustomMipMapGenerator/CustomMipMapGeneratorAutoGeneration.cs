@@ -10,6 +10,7 @@ namespace CustomMipMapGenerator
     {
         private static readonly HashSet<string> InProgress = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> SuppressedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly string[] SupportedExtensions = { ".png", ".tif", ".tiff" };
         private static bool clearScheduled;
 
         public static bool TryGenerateForAsset(string assetPath, CustomMipMapGeneratorProfileSet profileSet, ComputeShader shader)
@@ -20,7 +21,7 @@ namespace CustomMipMapGenerator
                 return false;
             if (InProgress.Contains(assetPath))
                 return false;
-            if (!assetPath.EndsWith(".png", StringComparison.OrdinalIgnoreCase))
+            if (!HasSupportedExtension(assetPath))
                 return false;
 
             var fileName = Path.GetFileNameWithoutExtension(assetPath);
@@ -56,14 +57,17 @@ namespace CustomMipMapGenerator
                 return 0;
 
             int generated = 0;
-            var files = Directory.GetFiles(dataPath, "*.png", SearchOption.AllDirectories);
-            foreach (var fullPath in files)
+            foreach (var extension in SupportedExtensions)
             {
-                var assetPath = ToAssetPath(fullPath);
-                if (string.IsNullOrEmpty(assetPath))
-                    continue;
-                if (TryGenerateForAsset(assetPath, profileSet, shader))
-                    generated++;
+                var files = Directory.GetFiles(dataPath, "*" + extension, SearchOption.AllDirectories);
+                foreach (var fullPath in files)
+                {
+                    var assetPath = ToAssetPath(fullPath);
+                    if (string.IsNullOrEmpty(assetPath))
+                        continue;
+                    if (TryGenerateForAsset(assetPath, profileSet, shader))
+                        generated++;
+                }
             }
 
             return generated;
@@ -104,6 +108,20 @@ namespace CustomMipMapGenerator
             var baseName = Path.GetFileNameWithoutExtension(assetPath);
             var safeDir = string.IsNullOrEmpty(dir) ? "Assets" : dir.Replace('\\', '/');
             return safeDir + "/" + baseName + CustomMipMapGeneratorMipFile.Extension;
+        }
+
+        private static bool HasSupportedExtension(string assetPath)
+        {
+            if (string.IsNullOrEmpty(assetPath))
+                return false;
+
+            foreach (var extension in SupportedExtensions)
+            {
+                if (assetPath.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
+                    return true;
+            }
+
+            return false;
         }
 
         private static string ToAssetPath(string fullPath)

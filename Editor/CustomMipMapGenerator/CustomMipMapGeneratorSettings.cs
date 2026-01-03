@@ -3,7 +3,7 @@ using UnityEngine;
 
 namespace CustomMipMapGenerator
 {
-    public enum AlphaFilterMode { None, PreserveCoverage, MaxFilter }
+    public enum AlphaFilterMode { None, PreserveCoverage, MaxFilter, AlphaPyramid, ErrorDiffusion }
     public enum FilterMode { Kaiser, Ewa }
     public enum TextureKind { Color, NormalMap, DataMap }
     public enum ChannelFilter
@@ -72,6 +72,8 @@ namespace CustomMipMapGenerator
         public AlphaFilterMode alphaFilterMode = AlphaFilterMode.None;
         [Range(0f, 1f)]
         public float alphaClip = 0.5f;
+        [Range(0f, 0.02f)]
+        public float alphaDitherNoise;
         [Range(1, 4)]
         public int maxFilterRadiusMin = 1;
         [Range(1, 8)]
@@ -114,6 +116,7 @@ namespace CustomMipMapGenerator
                 channelPower = channelPower,
                 alphaFilterMode = alphaFilterMode,
                 alphaClip = alphaClip,
+                alphaDitherNoise = alphaDitherNoise,
                 maxFilterRadiusMin = maxFilterRadiusMin,
                 maxFilterRadiusMax = maxFilterRadiusMax,
                 maxFilterStepSize = maxFilterStepSize,

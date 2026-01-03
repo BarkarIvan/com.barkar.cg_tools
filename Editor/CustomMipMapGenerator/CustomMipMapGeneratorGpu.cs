@@ -82,32 +82,39 @@ public static class CustomMipMapGeneratorGpu
         bool isDataMap = settings.textureKind == TextureKind.DataMap;
         var mipCount = Mathf.FloorToInt(Mathf.Log(Mathf.Max(width, height), 2)) + 1;
         bool toksvigActive = isNormalMap && settings.toksvigInAlpha;
+        bool useAlphaPyramid = !toksvigActive && settings.alphaFilterMode == AlphaFilterMode.AlphaPyramid;
+        bool useErrorDiffusion = !toksvigActive && settings.alphaFilterMode == AlphaFilterMode.ErrorDiffusion;
         int maxFullRes = Mathf.Min(6, Mathf.Max(0, mipCount - 1));
         var clampedFullResMipCount = Mathf.Clamp(settings.fullResMipCount, 0, maxFullRes);
         var shouldGammaCorrect = !isNormalMap && !isDataMap && PlayerSettings.colorSpace == ColorSpace.Gamma;
-        var effectiveAlphaMode = toksvigActive ? AlphaFilterMode.None : settings.alphaFilterMode;
+        var shaderAlphaMode = (toksvigActive || useAlphaPyramid || useErrorDiffusion)
+            ? AlphaFilterMode.None
+            : settings.alphaFilterMode;
         bool perChannelActive = settings.usePerChannelFilter && isDataMap;
         bool perChannelCoverage = perChannelActive && (settings.channelFilterR == ChannelFilter.PreserveCoverage
             || settings.channelFilterG == ChannelFilter.PreserveCoverage
             || settings.channelFilterB == ChannelFilter.PreserveCoverage
             || settings.channelFilterA == ChannelFilter.PreserveCoverage);
-        bool doPreserveCoverage = effectiveAlphaMode == AlphaFilterMode.PreserveCoverage || perChannelCoverage;
+        bool doPreserveCoverage = shaderAlphaMode == AlphaFilterMode.PreserveCoverage || perChannelCoverage;
         int channelFilterRValue = perChannelActive ? ChannelFilterToShader(settings.channelFilterR) : 0;
         int channelFilterGValue = perChannelActive ? ChannelFilterToShader(settings.channelFilterG) : 0;
         int channelFilterBValue = perChannelActive ? ChannelFilterToShader(settings.channelFilterB) : 0;
-        int channelFilterAValue = (perChannelActive && effectiveAlphaMode == AlphaFilterMode.None)
+        int channelFilterAValue = (perChannelActive && shaderAlphaMode == AlphaFilterMode.None)
             ? ChannelFilterToShader(settings.channelFilterA)
             : 0;
 
         RenderTexture rt = null;
         RenderTexture rtSharpen = null;
         RenderTexture rtPrev = null;
+        RenderTexture rtScale = null;
         ComputeBuffer histBuffer = null;
         ComputeBuffer coverageBuffer = null;
 
         try
         {
             rt = CreateMipRenderTexture(width, height);
+            if (doPreserveCoverage)
+                rtScale = CreateMipRenderTexture(width, height);
 
             bool sharpenActive = settings.sharpenEnabled && (settings.sharpenNormals || !isNormalMap);
             int maxSharpenMip = sharpenActive && mipCount > 1 ? Mathf.Clamp(settings.sharpenMipCount, 1, mipCount - 1) : 0;
@@ -134,7 +141,7 @@ public static class CustomMipMapGeneratorGpu
             if (toksvigActive)
                 DispatchPrepareToksvigBase(shader, kernels.PrepareToksvigBase, sourceTexture, rt, width, height);
 
-            SetStaticShaderParams(shader, settings, isNormalMap, shouldGammaCorrect, effectiveAlphaMode,
+            SetStaticShaderParams(shader, settings, isNormalMap, shouldGammaCorrect, shaderAlphaMode,
                 channelFilterRValue, channelFilterGValue, channelFilterBValue, channelFilterAValue);
 
             bool warnedFullResRatio = false;
@@ -174,7 +181,7 @@ public static class CustomMipMapGeneratorGpu
                 SetPerMipShaderParams(shader, mipWidth, mipHeight, srcWidth, srcHeight, prevWidth, prevHeight,
                     wratio, hratio, usePrev, mip, maxFilterRadius);
 
-                bool needsPrev = usePrev || effectiveAlphaMode != AlphaFilterMode.None;
+                bool needsPrev = usePrev || shaderAlphaMode != AlphaFilterMode.None || doPreserveCoverage;
                 if (needsPrev)
                 {
                     rtPrev = EnsurePrevTexture(rtPrev, prevWidth, prevHeight);
@@ -191,8 +198,8 @@ public static class CustomMipMapGeneratorGpu
                 shader.Dispatch(kernels.Generate, groupsX, groupsY, 1);
 
                 if (doPreserveCoverage)
-                    ApplyCoveragePreservation(shader, kernels, rt, histBuffer, coverageBuffer, histData, coverageData,
-                        settings, effectiveAlphaMode, mip, mipWidth, mipHeight, coverageChannels, groupsX, groupsY);
+                    ApplyCoveragePreservation(shader, kernels, rt, rtPrev, rtScale, histBuffer, coverageBuffer, histData, coverageData,
+                        settings, shaderAlphaMode, mip, mipWidth, mipHeight, prevWidth, prevHeight, coverageChannels, groupsX, groupsY);
 
                 if (sharpenActive && mip <= maxSharpenMip)
                     ApplySharpen(shader, kernels, rt, rtSharpen, settings, mip, mipWidth, mipHeight, groupsX, groupsY);
@@ -201,6 +208,11 @@ public static class CustomMipMapGeneratorGpu
             var mipTexture = ReadbackTexture(rt, width, height, mipCount, isNormalMap || isDataMap);
             if (mipTexture == null)
                 return;
+
+            if (useAlphaPyramid)
+                ApplyAlphaPyramid(mipTexture, mipCount, settings.alphaClip);
+            if (useErrorDiffusion)
+                ApplyAlphaErrorDiffusion(mipTexture, mipCount, settings.alphaClip, settings.alphaDitherNoise);
 
             mipTexture.Apply(false, false);
 
@@ -252,6 +264,8 @@ public static class CustomMipMapGeneratorGpu
                 rt.Release();
             if (rtSharpen != null)
                 rtSharpen.Release();
+            if (rtScale != null)
+                rtScale.Release();
             if (rtPrev != null)
                 rtPrev.Release();
             EditorUtility.ClearProgressBar();
@@ -476,12 +490,17 @@ public static class CustomMipMapGeneratorGpu
         shader.SetInt("_MaxFilterRadius", maxFilterRadius);
     }
 
-    private static void ApplyCoveragePreservation(ComputeShader shader, KernelIds kernels, RenderTexture rt, ComputeBuffer histBuffer,
-        ComputeBuffer coverageBuffer, uint[] histData, uint[] coverageData, CustomMipMapGeneratorSettings settings,
-        AlphaFilterMode effectiveAlphaMode, int mip, int mipWidth, int mipHeight, int[] coverageChannels, int groupsX, int groupsY)
+    private static void ApplyCoveragePreservation(ComputeShader shader, KernelIds kernels, RenderTexture rt, RenderTexture prevRt,
+        RenderTexture scaleRt, ComputeBuffer histBuffer, ComputeBuffer coverageBuffer, uint[] histData, uint[] coverageData,
+        CustomMipMapGeneratorSettings settings, AlphaFilterMode shaderAlphaMode, int mip, int mipWidth, int mipHeight,
+        int prevWidth, int prevHeight, int[] coverageChannels, int groupsX, int groupsY)
     {
+        if (scaleRt == null)
+            scaleRt = rt;
+        bool useScaleRt = scaleRt != rt;
+
         int coverageCount = 0;
-        if (effectiveAlphaMode == AlphaFilterMode.PreserveCoverage)
+        if (shaderAlphaMode == AlphaFilterMode.PreserveCoverage)
         {
             coverageChannels[coverageCount++] = 3;
         }
@@ -502,13 +521,12 @@ public static class CustomMipMapGeneratorGpu
             int coverageChannel = coverageChannels[i];
             System.Array.Clear(histData, 0, histData.Length);
             histBuffer.SetData(histData);
-            coverageData[0] = 0;
-            coverageBuffer.SetData(coverageData);
 
             shader.SetInt("_CoverageChannel", coverageChannel);
             shader.SetInt("_SubsampleN", SubsampleN);
             shader.SetBuffer(kernels.Stats, "_AlphaHist", histBuffer);
             shader.SetBuffer(kernels.Stats, "_AlphaCoverage", coverageBuffer);
+            shader.SetInt("_AlphaStatsMode", 1);
             shader.SetTexture(kernels.Stats, "_MipTex", rt);
             shader.SetInt("_MipLevel", mip);
             shader.SetInt("_DstWidth", mipWidth);
@@ -517,10 +535,21 @@ public static class CustomMipMapGeneratorGpu
 
             shader.Dispatch(kernels.Stats, groupsX, groupsY, 1);
 
+            coverageData[0] = 0;
+            coverageBuffer.SetData(coverageData);
+            shader.SetInt("_AlphaStatsMode", 2);
+            shader.SetTexture(kernels.Stats, "_MipTex", prevRt);
+            shader.SetInt("_MipLevel", 0);
+            shader.SetInt("_DstWidth", prevWidth);
+            shader.SetInt("_DstHeight", prevHeight);
+            int coverageGroupsX = (prevWidth + ThreadGroupSize - 1) / ThreadGroupSize;
+            int coverageGroupsY = (prevHeight + ThreadGroupSize - 1) / ThreadGroupSize;
+            shader.Dispatch(kernels.Stats, coverageGroupsX, coverageGroupsY, 1);
+
             histBuffer.GetData(histData);
             coverageBuffer.GetData(coverageData);
 
-            int coveragePixels = Mathf.Max(1, (mipWidth - 1) * (mipHeight - 1));
+            int coveragePixels = Mathf.Max(1, (prevWidth - 1) * (prevHeight - 1));
             float targetCoverage = (float)coverageData[0] / (coveragePixels * SubsampleN * SubsampleN);
             int totalPixels = mipWidth * mipHeight;
             int targetCount = Mathf.Clamp(Mathf.RoundToInt(targetCoverage * totalPixels), 0, totalPixels);
@@ -555,11 +584,21 @@ public static class CustomMipMapGeneratorGpu
             shader.SetInt("_CoverageChannel", coverageChannel);
             shader.SetFloat("_AlphaScale", scale);
             shader.SetTexture(kernels.Scale, "_MipTex", rt);
-            shader.SetTexture(kernels.Scale, "_Result", rt, mip);
+            shader.SetTexture(kernels.Scale, "_Result", scaleRt, mip);
             shader.SetInt("_MipLevel", mip);
             shader.SetInt("_DstWidth", mipWidth);
             shader.SetInt("_DstHeight", mipHeight);
             shader.Dispatch(kernels.Scale, groupsX, groupsY, 1);
+
+            if (useScaleRt)
+            {
+                shader.SetTexture(kernels.Copy, "_MipTex", scaleRt);
+                shader.SetTexture(kernels.Copy, "_Result", rt, mip);
+                shader.SetInt("_MipLevel", mip);
+                shader.SetInt("_DstWidth", mipWidth);
+                shader.SetInt("_DstHeight", mipHeight);
+                shader.Dispatch(kernels.Copy, groupsX, groupsY, 1);
+            }
         }
     }
 
@@ -582,6 +621,7 @@ public static class CustomMipMapGeneratorGpu
         shader.Dispatch(kernels.Copy, groupsX, groupsY, 1);
     }
 
+
     private static Texture2D ReadbackTexture(RenderTexture rt, int width, int height, int mipCount, bool isLinear)
     {
         var mipTexture = new Texture2D(width, height, TextureFormat.RGBA32, mipCount, isLinear);
@@ -598,6 +638,338 @@ public static class CustomMipMapGeneratorGpu
             mipTexture.SetPixelData(request.GetData<Color32>(), mip);
         }
         return mipTexture;
+    }
+
+    private static void ApplyAlphaErrorDiffusion(Texture2D texture, int mipCount, float alphaClip, float ditherNoise)
+    {
+        if (texture == null)
+            return;
+
+        float clip = Mathf.Clamp01(alphaClip);
+        float noise = Mathf.Max(0f, ditherNoise);
+        for (int mip = 0; mip < mipCount; mip++)
+        {
+            int width = Mathf.Max(1, texture.width >> mip);
+            int height = Mathf.Max(1, texture.height >> mip);
+            var pixels = texture.GetPixels32(mip);
+            if (pixels.Length == 0)
+                continue;
+
+            ApplyAlphaErrorDiffusionToPixels(pixels, width, height, clip, noise, mip);
+            texture.SetPixels32(pixels, mip);
+        }
+    }
+
+    private static void ApplyAlphaErrorDiffusionToPixels(Color32[] pixels, int width, int height, float alphaClip,
+        float noise, int mip)
+    {
+        int total = width * height;
+        if (total <= 0 || pixels.Length < total)
+            return;
+
+        var buffer = new float[total];
+        for (int i = 0; i < total; i++)
+            buffer[i] = pixels[i].a / 255f;
+
+        if (noise > 0f)
+        {
+            uint seed = Hash(((uint)(mip + 1)) * 0x85ebca6bu);
+            for (int i = 0; i < total; i++)
+            {
+                float n = (HashToUnitFloat(seed ^ (uint)i) - 0.5f) * noise;
+                buffer[i] += n;
+            }
+        }
+
+        const float w1 = 7f / 16f;
+        const float w2 = 3f / 16f;
+        const float w3 = 5f / 16f;
+        const float w4 = 1f / 16f;
+
+        for (int y = 0; y < height; y++)
+        {
+            int row = y * width;
+            for (int x = 0; x < width; x++)
+            {
+                int idx = row + x;
+                float oldVal = buffer[idx];
+                float newVal = oldVal >= alphaClip ? 1f : 0f;
+                buffer[idx] = newVal;
+                float error = oldVal - newVal;
+
+                if (x + 1 < width)
+                    buffer[idx + 1] += error * w1;
+
+                if (y + 1 < height)
+                {
+                    int rowBelow = idx + width;
+                    if (x > 0)
+                        buffer[rowBelow - 1] += error * w2;
+                    buffer[rowBelow] += error * w3;
+                    if (x + 1 < width)
+                        buffer[rowBelow + 1] += error * w4;
+                }
+            }
+        }
+
+        for (int i = 0; i < total; i++)
+            pixels[i].a = buffer[i] >= 0.5f ? (byte)255 : (byte)0;
+    }
+
+    private sealed class AlphaPyramidLevel
+    {
+        public int Width;
+        public int Height;
+        public float[] Alpha;
+        public int[] Capacity;
+        public int[] Visibility;
+    }
+
+    private static void ApplyAlphaPyramid(Texture2D texture, int mipCount, float alphaClip)
+    {
+        if (texture == null)
+            return;
+
+        float clip = Mathf.Max(1e-4f, alphaClip);
+        for (int mip = 0; mip < mipCount; mip++)
+        {
+            int width = Mathf.Max(1, texture.width >> mip);
+            int height = Mathf.Max(1, texture.height >> mip);
+            var pixels = texture.GetPixels32(mip);
+            if (pixels.Length == 0)
+                continue;
+
+            ApplyAlphaPyramidToPixels(pixels, width, height, clip, mip);
+            texture.SetPixels32(pixels, mip);
+        }
+    }
+
+    private static void ApplyAlphaPyramidToPixels(Color32[] pixels, int width, int height, float alphaClip, int mip)
+    {
+        int total = width * height;
+        if (total <= 0)
+            return;
+
+        var alpha = new float[total];
+        var capacity = new int[total];
+        float sumAlpha = 0f;
+        for (int i = 0; i < total; i++)
+        {
+            float a = pixels[i].a / 255f;
+            alpha[i] = a;
+            capacity[i] = 1;
+            sumAlpha += a;
+        }
+
+        int target = Mathf.Clamp(Mathf.CeilToInt(sumAlpha / (2f * alphaClip)), 0, total);
+
+        var levels = new System.Collections.Generic.List<AlphaPyramidLevel>(16)
+        {
+            new AlphaPyramidLevel
+            {
+                Width = width,
+                Height = height,
+                Alpha = alpha,
+                Capacity = capacity
+            }
+        };
+
+        int currentWidth = width;
+        int currentHeight = height;
+        while (currentWidth > 1 || currentHeight > 1)
+        {
+            int nextWidth = Mathf.Max(1, currentWidth / 2);
+            int nextHeight = Mathf.Max(1, currentHeight / 2);
+            var nextAlpha = new float[nextWidth * nextHeight];
+            var nextCapacity = new int[nextWidth * nextHeight];
+            var prevLevel = levels[levels.Count - 1];
+
+            for (int y = 0; y < nextHeight; y++)
+            {
+                int childStartY = y * 2;
+                int childCountY = (y == nextHeight - 1) ? (currentHeight - childStartY) : 2;
+                for (int x = 0; x < nextWidth; x++)
+                {
+                    int childStartX = x * 2;
+                    int childCountX = (x == nextWidth - 1) ? (currentWidth - childStartX) : 2;
+                    float sum = 0f;
+                    int capSum = 0;
+                    for (int cy = 0; cy < childCountY; cy++)
+                    {
+                        int row = (childStartY + cy) * currentWidth;
+                        for (int cx = 0; cx < childCountX; cx++)
+                        {
+                            int childIndex = row + childStartX + cx;
+                            sum += prevLevel.Alpha[childIndex];
+                            capSum += prevLevel.Capacity[childIndex];
+                        }
+                    }
+                    int parentIndex = y * nextWidth + x;
+                    nextAlpha[parentIndex] = sum;
+                    nextCapacity[parentIndex] = capSum;
+                }
+            }
+
+            levels.Add(new AlphaPyramidLevel
+            {
+                Width = nextWidth,
+                Height = nextHeight,
+                Alpha = nextAlpha,
+                Capacity = nextCapacity
+            });
+
+            currentWidth = nextWidth;
+            currentHeight = nextHeight;
+        }
+
+        foreach (var level in levels)
+            level.Visibility = new int[level.Alpha.Length];
+
+        var topLevel = levels[levels.Count - 1];
+        if (topLevel.Visibility.Length > 0)
+            topLevel.Visibility[0] = target;
+
+        float invClip = 1f / (2f * alphaClip);
+        float[] remainderBuffer = new float[9];
+        int[] indexBuffer = new int[9];
+        uint baseSeed = Hash(((uint)(mip + 1)) * 0x9E3779B9u);
+
+        for (int levelIndex = levels.Count - 1; levelIndex > 0; levelIndex--)
+        {
+            var parent = levels[levelIndex];
+            var child = levels[levelIndex - 1];
+            for (int py = 0; py < parent.Height; py++)
+            {
+                int childStartY = py * 2;
+                int childCountY = (py == parent.Height - 1) ? (child.Height - childStartY) : 2;
+                for (int px = 0; px < parent.Width; px++)
+                {
+                    int parentIndex = py * parent.Width + px;
+                    int desired = parent.Visibility[parentIndex];
+                    if (desired <= 0)
+                        continue;
+
+                    int childStartX = px * 2;
+                    int childCountX = (px == parent.Width - 1) ? (child.Width - childStartX) : 2;
+                    uint groupSeed = Hash(baseSeed ^ (uint)parentIndex);
+                    DistributeVisibility(child, childStartX, childStartY, childCountX, childCountY,
+                        desired, invClip, groupSeed, remainderBuffer, indexBuffer);
+                }
+            }
+        }
+
+        var vis0 = levels[0].Visibility;
+        for (int i = 0; i < total; i++)
+            pixels[i].a = (byte)(vis0[i] > 0 ? 255 : 0);
+    }
+
+    private static void DistributeVisibility(AlphaPyramidLevel child, int childStartX, int childStartY,
+        int childCountX, int childCountY, int desired, float invClip, uint seed,
+        float[] remainderBuffer, int[] indexBuffer)
+    {
+        int childWidth = child.Width;
+        var childAlpha = child.Alpha;
+        var childCapacity = child.Capacity;
+        var childVisibility = child.Visibility;
+
+        int count = 0;
+        int baseSum = 0;
+        for (int y = 0; y < childCountY; y++)
+        {
+            int row = (childStartY + y) * childWidth;
+            for (int x = 0; x < childCountX; x++)
+            {
+                int idx = row + childStartX + x;
+                int capacity = Mathf.Max(1, childCapacity[idx]);
+                float expected = childAlpha[idx] * invClip;
+                if (expected > capacity)
+                    expected = capacity;
+                int baseCount = Mathf.FloorToInt(expected);
+                if (baseCount > capacity)
+                    baseCount = capacity;
+                childVisibility[idx] = baseCount;
+                baseSum += baseCount;
+                remainderBuffer[count] = expected - baseCount;
+                indexBuffer[count] = idx;
+                count++;
+            }
+        }
+
+        int leftover = desired - baseSum;
+        if (leftover > 0)
+        {
+            for (int i = 0; i < leftover; i++)
+            {
+                int best = -1;
+                float bestRem = -1f;
+                uint bestHash = 0;
+                for (int c = 0; c < count; c++)
+                {
+                    int idx = indexBuffer[c];
+                    if (childVisibility[idx] >= childCapacity[idx])
+                        continue;
+                    float rem = remainderBuffer[c];
+                    if (rem < 0f)
+                        continue;
+                    uint h = Hash(seed ^ (uint)idx);
+                    if (rem > bestRem || (Mathf.Abs(rem - bestRem) < 1e-6f && h > bestHash))
+                    {
+                        bestRem = rem;
+                        bestHash = h;
+                        best = c;
+                    }
+                }
+                if (best < 0)
+                    break;
+                childVisibility[indexBuffer[best]] += 1;
+                remainderBuffer[best] = -1f;
+            }
+        }
+        else if (leftover < 0)
+        {
+            int remove = -leftover;
+            for (int i = 0; i < remove; i++)
+            {
+                int worst = -1;
+                float worstRem = float.MaxValue;
+                uint worstHash = 0;
+                for (int c = 0; c < count; c++)
+                {
+                    int idx = indexBuffer[c];
+                    if (childVisibility[idx] <= 0)
+                        continue;
+                    float rem = remainderBuffer[c];
+                    uint h = Hash(seed ^ (uint)idx);
+                    if (rem < worstRem || (Mathf.Abs(rem - worstRem) < 1e-6f && h > worstHash))
+                    {
+                        worstRem = rem;
+                        worstHash = h;
+                        worst = c;
+                    }
+                }
+                if (worst < 0)
+                    break;
+                childVisibility[indexBuffer[worst]] -= 1;
+            }
+        }
+    }
+
+    private static uint Hash(uint x)
+    {
+        unchecked
+        {
+            x ^= x >> 16;
+            x *= 0x7feb352d;
+            x ^= x >> 15;
+            x *= 0x846ca68b;
+            x ^= x >> 16;
+            return x;
+        }
+    }
+
+    private static float HashToUnitFloat(uint x)
+    {
+        return (Hash(x) & 0x00FFFFFF) / 16777216f;
     }
 
     private static int ChannelFilterToShader(ChannelFilter filter)

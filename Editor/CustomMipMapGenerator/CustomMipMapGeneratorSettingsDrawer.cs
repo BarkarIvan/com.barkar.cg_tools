@@ -25,8 +25,9 @@ namespace CustomMipMapGenerator
             ["sharpenMipCount"] = "Number of mip levels to sharpen.",
             ["sharpenNormals"] = "Apply sharpening to normal maps.",
             ["toksvigInAlpha"] = "Store normal length in alpha for Toksvig roughness. Requires shader support.",
-            ["alphaFilterMode"] = "None = filter alpha normally. PreserveCoverage = keep alpha-clip coverage. MaxFilter = dilate alpha.",
-            ["alphaClip"] = "Alpha threshold used for coverage preservation.",
+            ["alphaFilterMode"] = "None = filter alpha normally. PreserveCoverage = keep alpha-clip coverage. MaxFilter = dilate alpha. AlphaPyramid = binary alpha pattern for alpha testing. ErrorDiffusion = Floyd-Steinberg dither for alpha testing.",
+            ["alphaClip"] = "Alpha threshold used for coverage preservation, Alpha Pyramid, and Error Diffusion.",
+            ["alphaDitherNoise"] = "Random noise strength for Error Diffusion (0 disables).",
             ["maxFilterRadiusMin"] = "Minimum dilation radius for MaxFilter alpha.",
             ["maxFilterRadiusMax"] = "Maximum dilation radius for MaxFilter alpha.",
             ["maxFilterStepSize"] = "Increase dilation radius after every N mip levels.",
@@ -85,6 +86,7 @@ namespace CustomMipMapGenerator
             var channelPowerProp = property.FindPropertyRelative("channelPower");
             var alphaFilterModeProp = property.FindPropertyRelative("alphaFilterMode");
             var alphaClipProp = property.FindPropertyRelative("alphaClip");
+            var alphaDitherNoiseProp = property.FindPropertyRelative("alphaDitherNoise");
             var maxFilterRadiusMinProp = property.FindPropertyRelative("maxFilterRadiusMin");
             var maxFilterRadiusMaxProp = property.FindPropertyRelative("maxFilterRadiusMax");
             var maxFilterStepSizeProp = property.FindPropertyRelative("maxFilterStepSize");
@@ -157,8 +159,11 @@ namespace CustomMipMapGenerator
                 if (!toksvigActive)
                 {
                     var alphaMode = (AlphaFilterMode)alphaFilterModeProp.enumValueIndex;
-                    if (alphaMode == AlphaFilterMode.PreserveCoverage)
+                    if (alphaMode == AlphaFilterMode.PreserveCoverage || alphaMode == AlphaFilterMode.AlphaPyramid
+                        || alphaMode == AlphaFilterMode.ErrorDiffusion)
                         DrawSlider(position, ref y, alphaClipProp, 0f, 1f);
+                    if (alphaMode == AlphaFilterMode.ErrorDiffusion)
+                        DrawSlider(position, ref y, alphaDitherNoiseProp, 0f, 0.02f);
                     if (alphaMode == AlphaFilterMode.MaxFilter)
                     {
                         DrawIntSlider(position, ref y, maxFilterRadiusMinProp, 1, 4);
@@ -291,7 +296,10 @@ namespace CustomMipMapGenerator
                 if (!toksvigActive)
                 {
                     var alphaMode = (AlphaFilterMode)alphaFilterModeProp.enumValueIndex;
-                    if (alphaMode == AlphaFilterMode.PreserveCoverage)
+                    if (alphaMode == AlphaFilterMode.PreserveCoverage || alphaMode == AlphaFilterMode.AlphaPyramid
+                        || alphaMode == AlphaFilterMode.ErrorDiffusion)
+                        y = MeasureLine(y, lineHeight, spacing);
+                    if (alphaMode == AlphaFilterMode.ErrorDiffusion)
                         y = MeasureLine(y, lineHeight, spacing);
                     if (alphaMode == AlphaFilterMode.MaxFilter)
                     {

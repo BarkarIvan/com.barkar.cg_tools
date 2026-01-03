@@ -209,6 +209,7 @@ half4 ARMLitFragment(Varyings IN) : SV_Target
     #endif
 
     result.rgb += emissionColor;
+    result.a = surfaceData.alpha;
 
     //LOD
     #ifdef LOD_FADE_CROSSFADE

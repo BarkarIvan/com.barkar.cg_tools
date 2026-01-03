@@ -47,6 +47,7 @@ int _MaxFilterStepSize;
 int _MaxFilterRadius;
 int _SubsampleN;
 float _AlphaScale;
+int _AlphaStatsMode;
 float _SharpenStrength;
 float _SharpenClamp;
 
@@ -420,8 +421,14 @@ void ComputeAlphaStats(uint3 id : SV_DispatchThreadID)
 
     float4 c0 = _MipTex.Load(int3(id.x, id.y, _MipLevel));
     float alpha = saturate(GetChannelValue(c0, _CoverageChannel));
-    uint bin = min(255, (uint)floor(alpha * 255.0 + 0.5));
-    InterlockedAdd(_AlphaHist[bin], 1);
+    if (_AlphaStatsMode != 2)
+    {
+        uint bin = min(255, (uint)floor(alpha * 255.0 + 0.5));
+        InterlockedAdd(_AlphaHist[bin], 1);
+    }
+
+    if (_AlphaStatsMode == 1)
+        return;
 
     if (id.x >= (uint)(_DstWidth - 1) || id.y >= (uint)(_DstHeight - 1))
         return;
@@ -442,7 +449,7 @@ void ComputeAlphaStats(uint3 id : SV_DispatchThreadID)
                     + a10 * fx * (1.0 - fy)
                     + a01 * (1.0 - fx) * fy
                     + a11 * fx * fy;
-            if (a > _AlphaClip)
+            if (a >= _AlphaClip)
                 covered++;
         }
     }
