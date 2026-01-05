@@ -20,12 +20,22 @@ namespace MeshQuantization
                    !mesh.HasVertexAttribute(VertexAttribute.Tangent);
         }
 
+        public static bool TryQuantizeImport(Mesh mesh, MeshQuantizationSettings settings, string assetPath)
+        {
+            return TryQuantizeInternal(mesh, settings, assetPath, ignoreReadWrite: true);
+        }
+
         public static bool TryQuantize(Mesh mesh, MeshQuantizationSettings settings, string assetPath)
+        {
+            return TryQuantizeInternal(mesh, settings, assetPath, ignoreReadWrite: false);
+        }
+
+        private static bool TryQuantizeInternal(Mesh mesh, MeshQuantizationSettings settings, string assetPath, bool ignoreReadWrite)
         {
             if (mesh == null || mesh.vertexCount == 0)
                 return false;
 
-            if (!mesh.isReadable)
+            if (!ignoreReadWrite && !mesh.isReadable)
             {
                 Debug.LogWarning($"Mesh quantization skipped (Read/Write disabled): {assetPath} ({mesh.name})");
                 return false;
