@@ -1,6 +1,7 @@
 #if UNITY_EDITOR
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using UnityEditor;
@@ -22,6 +23,7 @@ public static class RemeshUnwrapBakeRunner
         public float Cage;
         public int Samples;
         public int? FinalFaceNum;
+        public string RemeshOutputNameContains;
     }
 
     public struct RemeshUnwrapBakeResult
@@ -39,7 +41,8 @@ public static class RemeshUnwrapBakeRunner
         TexSize = DefaultTexSize,
         Cage = DefaultCage,
         Samples = DefaultSamples,
-        FinalFaceNum = null
+        FinalFaceNum = null,
+        RemeshOutputNameContains = string.Empty
     };
 
     [MenuItem("Tools/LowPoly/Remesh -> Unwrap+Bake (OBJ)")]
@@ -116,7 +119,7 @@ public static class RemeshUnwrapBakeRunner
         string blenderArgs =
             $"-b -P \"{blenderScriptAbs}\" -- " +
             $"--high \"{remeshInputAbs}\" --low \"{lowStableAbs}\" --out \"{outAbsDir}\" " +
-            $"--texSize {texSize} --cage {cage} --samples {samples}";
+            $"--texSize {texSize} --cage {cage.ToString(CultureInfo.InvariantCulture)} --samples {samples}";
 
         string blenderLogPath = Path.Combine(outAbsDir, "blender_bake.log");
         RunProcess(blenderExe, blenderArgs, outAbsDir, blenderLogPath);
@@ -190,7 +193,8 @@ public static class RemeshUnwrapBakeRunner
                 outAbsDir,
                 remeshInputAbs,
                 screenSize,
-                finalFaceNum
+                finalFaceNum,
+                options.RemeshOutputNameContains
             );
 
             string lowStableAbs = Path.Combine(outAbsDir, "low_remeshed.obj");
@@ -208,7 +212,7 @@ public static class RemeshUnwrapBakeRunner
             string blenderArgs =
                 $"-b -P \"{blenderScriptAbs}\" -- " +
                 $"--high \"{remeshInputAbs}\" --low \"{lowStableAbs}\" --out \"{outAbsDir}\" " +
-                $"--texSize {texSize} --cage {cage} --samples {samples}";
+                $"--texSize {texSize} --cage {cage.ToString(CultureInfo.InvariantCulture)} --samples {samples}";
 
         string blenderLogPath = Path.Combine(outAbsDir, "blender_bake.log");
         RunProcess(blenderExe, blenderArgs, outAbsDir, blenderLogPath);
@@ -261,7 +265,7 @@ public static class RemeshUnwrapBakeRunner
         }
     }
 
-    static string RunRemesherAndGetOutput(string exe, string workDir, string inputAbs, int screenSize, int? finalFaceNum)
+    static string RunRemesherAndGetOutput(string exe, string workDir, string inputAbs, int screenSize, int? finalFaceNum, string outputNameContains = null)
     {
         // Всё складываем в подпапку, чтобы не путаться
         string outDir = Path.Combine(workDir, "remesh_out");
@@ -274,15 +278,35 @@ public static class RemeshUnwrapBakeRunner
 
         RunProcess(exe, args, workDir);
 
-        var objs = Directory.GetFiles(outDir, "*.obj", SearchOption.AllDirectories)
+        var allObjs = Directory.GetFiles(outDir, "*.obj", SearchOption.AllDirectories)
             .Select(p => new FileInfo(p))
-            .OrderByDescending(fi => fi.LastWriteTimeUtc)
             .ToArray();
 
-        if (objs.Length == 0)
+        if (allObjs.Length == 0)
             throw new Exception($"Remesher finished but no .obj found in: {outDir}");
 
-        return objs[0].FullName;
+        FileInfo[] objs = allObjs;
+        if (!string.IsNullOrWhiteSpace(outputNameContains))
+        {
+            objs = allObjs
+                .Where(fi => fi.Name.IndexOf(outputNameContains, StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToArray();
+
+            if (objs.Length == 0)
+            {
+                UnityEngine.Debug.LogWarning(
+                    $"Remesh output filter '{outputNameContains}' did not match. Falling back to newest .obj."
+                );
+                objs = allObjs;
+            }
+        }
+
+        var picked = objs
+            .OrderByDescending(fi => fi.LastWriteTimeUtc)
+            .First();
+
+        UnityEngine.Debug.Log($"Remesh output: {picked.FullName}");
+        return picked.FullName;
     }
 
     static string FindRemesherExeOrThrow(string projectRoot)

@@ -14,6 +14,7 @@ public class RemeshUnwrapBakeWindow : EditorWindow
     const string PrefSamples = PrefPrefix + "Samples";
     const string PrefUseFinalFaces = PrefPrefix + "UseFinalFaces";
     const string PrefFinalFaces = PrefPrefix + "FinalFaces";
+    const string PrefRemeshOutputFilter = PrefPrefix + "RemeshOutputFilter";
     const string PrefBlenderExe = PrefPrefix + "BlenderExe";
     const string PrefBlenderScript = PrefPrefix + "BlenderScript";
     const string PrefLastOutDir = PrefPrefix + "LastOutDir";
@@ -76,6 +77,9 @@ public class RemeshUnwrapBakeWindow : EditorWindow
         {
             options.FinalFaceNum = null;
         }
+        options.RemeshOutputNameContains = EditorGUILayout.TextField("Output Name Filter", options.RemeshOutputNameContains);
+        if (!string.IsNullOrWhiteSpace(options.RemeshOutputNameContains))
+            EditorGUILayout.HelpBox("Uses name substring to pick the remesh output. Example: noInterior", MessageType.Info);
 
         EditorGUILayout.Space();
         EditorGUILayout.LabelField("Bake", EditorStyles.boldLabel);
@@ -237,6 +241,7 @@ public class RemeshUnwrapBakeWindow : EditorWindow
         else
             options.FinalFaceNum = null;
 
+        options.RemeshOutputNameContains = EditorPrefs.GetString(PrefRemeshOutputFilter, options.RemeshOutputNameContains ?? string.Empty);
         blenderExeOverride = EditorPrefs.GetString(PrefBlenderExe, string.Empty);
         blenderScriptOverride = EditorPrefs.GetString(PrefBlenderScript, string.Empty);
         lastOutAssetDir = EditorPrefs.GetString(PrefLastOutDir, string.Empty);
@@ -252,6 +257,7 @@ public class RemeshUnwrapBakeWindow : EditorWindow
         EditorPrefs.SetBool(PrefUseFinalFaces, useFinalFaces);
         if (options.FinalFaceNum.HasValue)
             EditorPrefs.SetInt(PrefFinalFaces, options.FinalFaceNum.Value);
+        EditorPrefs.SetString(PrefRemeshOutputFilter, options.RemeshOutputNameContains ?? string.Empty);
         EditorPrefs.SetString(PrefBlenderExe, blenderExeOverride ?? string.Empty);
         EditorPrefs.SetString(PrefBlenderScript, blenderScriptOverride ?? string.Empty);
         EditorPrefs.SetString(PrefLastOutDir, lastOutAssetDir ?? string.Empty);
