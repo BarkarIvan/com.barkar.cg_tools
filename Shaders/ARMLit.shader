@@ -97,6 +97,8 @@ Shader "CGTools/ARMLit"
             #pragma multi_compile _ EVALUATE_SH_MIXED EVALUATE_SH_VERTE
             #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
             #pragma multi_compile _ DIRLIGHTMAP_COMBINED
+            #pragma multi_compile_fragment _ _SCREEN_SPACE_OCCLUSION
+            #pragma multi_compile_fragment _ _GTAO_BENT_NORMALS
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_BLENDING
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_BOX_PROJECTION
             #pragma multi_compile_fragment _ _REFLECTION_PROBE_ATLAS

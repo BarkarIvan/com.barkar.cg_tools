@@ -1,7 +1,10 @@
 {
     "name": "CGTools.Runtime",
     "rootNamespace": "",
-    "references": [],
+    "references": [
+        "Unity.RenderPipelines.Universal.Runtime",
+        "Unity.RenderPipelines.Core.Runtime"
+    ],
     "includePlatforms": [
         "Android",
         "Editor",

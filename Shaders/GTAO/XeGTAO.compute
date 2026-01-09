@@ -1,0 +1,455 @@
+#pragma kernel CSPrefilterDepths16x16
+#pragma kernel CSGenerateNormals
+#pragma kernel CSDownsampleDepth
+#pragma kernel CSGTAOLow
+#pragma kernel CSGTAOMedium
+#pragma kernel CSGTAOHigh
+#pragma kernel CSGTAOUltra
+#pragma kernel CSDenoisePass
+#pragma kernel CSDenoiseLastPass
+#pragma kernel CSTemporal
+#pragma kernel CSDecode
+#pragma kernel CSDecodeBentNormal
+#pragma kernel CSUpsample
+#pragma kernel CSUpsampleBentNormal
+
+#pragma target 4.5
+
+#pragma multi_compile __ _GTAO_BENT_NORMALS
+
+#define XE_GTAO_USE_DEFAULT_CONSTANTS 0
+#define VA_SATURATE(x) saturate(x)
+#define VA_PI 3.1415926535897932384626433832795
+
+#if defined(_GTAO_BENT_NORMALS)
+#define XE_GTAO_COMPUTE_BENT_NORMALS 1
+#endif
+
+#include "XeGTAO.hlsli"
+
+SamplerState sampler_PointClamp;
+SamplerState sampler_LinearClamp;
+
+cbuffer GTAOParams
+{
+    float4 _GTAOParams0;
+    float4 _GTAOParams1;
+    float4 _GTAOParams2;
+    float4 _GTAOParams3;
+    float4 _GTAOParams4;
+    float4 _GTAOParams5;
+    float4 _GTAOResolutionParams; // aoWidth, aoHeight, fullWidth, fullHeight
+    float4 _GTAOTemporalParams;   // blend, clamp, motionScale, historyReset
+    float4 _GTAOUpsampleParams;   // intensity, depthThresholdScale, outputScale, useDepthAware
+}
+
+Texture2D<float>      _GTAORawDepth;
+Texture2D<lpfloat>    _GTAOWorkingDepth;
+Texture2D<uint>       _GTAONormalmap;
+Texture2D<uint>       _GTAOAOTerm;
+Texture2D<lpfloat>    _GTAOEdges;
+Texture2D<float2>     _GTAOMotionVectors;
+Texture2D<float>      _GTAOHistory;
+Texture2D<float>      _GTAOInputFloat;
+Texture2D<unorm float4> _GTAOBentNormal;
+
+RWTexture2D<float>    _GTAORawDepthHalf;
+RWTexture2D<lpfloat>  _GTAODepthMip0;
+RWTexture2D<lpfloat>  _GTAODepthMip1;
+RWTexture2D<lpfloat>  _GTAODepthMip2;
+RWTexture2D<lpfloat>  _GTAODepthMip3;
+RWTexture2D<lpfloat>  _GTAODepthMip4;
+
+RWTexture2D<uint>     _GTAONormalOut;
+RWTexture2D<unorm float> _GTAOEdgesRW;
+RWTexture2D<uint>     _GTAOOutputA;
+RWTexture2D<uint>     _GTAOOutputB;
+RWTexture2D<float>    _GTAOHistoryOut;
+RWTexture2D<float>    _GTAOFloatOut;
+RWTexture2D<unorm float> _GTAOOutput;
+RWTexture2D<unorm float4> _GTAOBentNormalOut;
+RWTexture2D<unorm float4> _GTAOBentNormalFullOut;
+
+GTAOConstants LoadGTAOConstants()
+{
+    GTAOConstants c;
+    c.ViewportSize = (int2)_GTAOParams0.xy;
+    c.ViewportPixelSize = _GTAOParams0.zw;
+    c.DepthUnpackConsts = _GTAOParams1.xy;
+    c.CameraTanHalfFOV = _GTAOParams1.zw;
+    c.NDCToViewMul = _GTAOParams2.xy;
+    c.NDCToViewAdd = _GTAOParams2.zw;
+    c.NDCToViewMul_x_PixelSize = _GTAOParams3.xy;
+    c.EffectRadius = _GTAOParams3.z;
+    c.EffectFalloffRange = _GTAOParams3.w;
+    c.RadiusMultiplier = _GTAOParams4.x;
+    c.Padding0 = 0;
+    c.FinalValuePower = _GTAOParams4.y;
+    c.DenoiseBlurBeta = _GTAOParams4.z;
+    c.SampleDistributionPower = _GTAOParams4.w;
+    c.ThinOccluderCompensation = _GTAOParams5.x;
+    c.DepthMIPSamplingOffset = _GTAOParams5.y;
+    c.NoiseIndex = (int)_GTAOParams5.z;
+    return c;
+}
+
+lpfloat3 LoadNormal(int2 pos)
+{
+    uint packedInput = _GTAONormalmap.Load(int3(pos, 0)).x;
+    float3 unpackedOutput = XeGTAO_R11G11B10_UNORM_to_FLOAT3(packedInput);
+float3 normal = normalize(unpackedOutput * float3(2.0, 2.0, 2.0) - float3(1.0, 1.0, 1.0));
+    return (lpfloat3)normal;
+}
+
+lpfloat2 SpatioTemporalNoise(uint2 pixCoord, uint temporalIndex)
+{
+    uint index = HilbertIndex(pixCoord.x, pixCoord.y);
+    index += 288 * (temporalIndex % 64);
+    return lpfloat2(frac(0.5 + index * float2(0.75487766624669276005, 0.5698402909980532659114)));
+}
+
+float DecodeVisibility(uint packed)
+{
+#if defined(_GTAO_BENT_NORMALS)
+    lpfloat visibility;
+    lpfloat3 bentNormal;
+    XeGTAO_DecodeVisibilityBentNormal(packed, visibility, bentNormal);
+    return visibility;
+#else
+    return (packed / 255.0);
+#endif
+}
+
+[numthreads(8, 8, 1)]
+void CSDownsampleDepth(uint2 pixCoord : SV_DispatchThreadID)
+{
+    uint2 halfSize = (uint2)_GTAOResolutionParams.xy;
+    if (pixCoord.x >= halfSize.x || pixCoord.y >= halfSize.y)
+        return;
+
+    uint2 fullSize = (uint2)_GTAOResolutionParams.zw;
+    uint2 baseCoord = pixCoord * 2;
+    uint2 maxCoord = max(fullSize, 1) - 1;
+
+    uint2 c00 = min(baseCoord, maxCoord);
+    uint2 c10 = min(baseCoord + uint2(1, 0), maxCoord);
+    uint2 c01 = min(baseCoord + uint2(0, 1), maxCoord);
+    uint2 c11 = min(baseCoord + uint2(1, 1), maxCoord);
+
+    float d00 = _GTAORawDepth.Load(int3(c00, 0));
+    float d10 = _GTAORawDepth.Load(int3(c10, 0));
+    float d01 = _GTAORawDepth.Load(int3(c01, 0));
+    float d11 = _GTAORawDepth.Load(int3(c11, 0));
+
+    float depthMin = min(min(d00, d10), min(d01, d11));
+    float depthMax = max(max(d00, d10), max(d01, d11));
+    float useReversedZ = step(0.5, _GTAOParams5.w);
+    float depth = lerp(depthMin, depthMax, useReversedZ);
+    _GTAORawDepthHalf[pixCoord] = depth;
+}
+
+[numthreads(8, 8, 1)]
+void CSPrefilterDepths16x16(uint2 dispatchThreadID : SV_DispatchThreadID, uint2 groupThreadID : SV_GroupThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    XeGTAO_PrefilterDepths16x16(dispatchThreadID, groupThreadID, consts, _GTAORawDepth, sampler_PointClamp,
+        _GTAODepthMip0, _GTAODepthMip1, _GTAODepthMip2, _GTAODepthMip3, _GTAODepthMip4);
+}
+
+[numthreads(XE_GTAO_NUMTHREADS_X, XE_GTAO_NUMTHREADS_Y, 1)]
+void CSGenerateNormals(uint2 pixCoord : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoord.x >= viewportSize.x || pixCoord.y >= viewportSize.y)
+        return;
+
+    float3 viewspaceNormal = XeGTAO_ComputeViewspaceNormal(pixCoord, consts, _GTAORawDepth, sampler_PointClamp);
+    _GTAONormalOut[pixCoord] = XeGTAO_FLOAT3_to_R11G11B10_UNORM(saturate(viewspaceNormal * 0.5 + 0.5));
+}
+
+[numthreads(XE_GTAO_NUMTHREADS_X, XE_GTAO_NUMTHREADS_Y, 1)]
+void CSGTAOLow(uint2 pixCoord : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoord.x >= viewportSize.x || pixCoord.y >= viewportSize.y)
+        return;
+    XeGTAO_MainPass(pixCoord, 1, 2, SpatioTemporalNoise(pixCoord, consts.NoiseIndex), LoadNormal(pixCoord), consts,
+        _GTAOWorkingDepth, sampler_PointClamp, _GTAOOutputA, _GTAOEdgesRW);
+}
+
+[numthreads(XE_GTAO_NUMTHREADS_X, XE_GTAO_NUMTHREADS_Y, 1)]
+void CSGTAOMedium(uint2 pixCoord : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoord.x >= viewportSize.x || pixCoord.y >= viewportSize.y)
+        return;
+    XeGTAO_MainPass(pixCoord, 2, 2, SpatioTemporalNoise(pixCoord, consts.NoiseIndex), LoadNormal(pixCoord), consts,
+        _GTAOWorkingDepth, sampler_PointClamp, _GTAOOutputA, _GTAOEdgesRW);
+}
+
+[numthreads(XE_GTAO_NUMTHREADS_X, XE_GTAO_NUMTHREADS_Y, 1)]
+void CSGTAOHigh(uint2 pixCoord : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoord.x >= viewportSize.x || pixCoord.y >= viewportSize.y)
+        return;
+    XeGTAO_MainPass(pixCoord, 3, 3, SpatioTemporalNoise(pixCoord, consts.NoiseIndex), LoadNormal(pixCoord), consts,
+        _GTAOWorkingDepth, sampler_PointClamp, _GTAOOutputA, _GTAOEdgesRW);
+}
+
+[numthreads(XE_GTAO_NUMTHREADS_X, XE_GTAO_NUMTHREADS_Y, 1)]
+void CSGTAOUltra(uint2 pixCoord : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoord.x >= viewportSize.x || pixCoord.y >= viewportSize.y)
+        return;
+    XeGTAO_MainPass(pixCoord, 9, 3, SpatioTemporalNoise(pixCoord, consts.NoiseIndex), LoadNormal(pixCoord), consts,
+        _GTAOWorkingDepth, sampler_PointClamp, _GTAOOutputA, _GTAOEdgesRW);
+}
+
+[numthreads(XE_GTAO_NUMTHREADS_X, XE_GTAO_NUMTHREADS_Y, 1)]
+void CSDenoisePass(uint2 dispatchThreadID : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 pixCoordBase = dispatchThreadID * uint2(2, 1);
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoordBase.x >= viewportSize.x || pixCoordBase.y >= viewportSize.y)
+        return;
+    XeGTAO_Denoise(pixCoordBase, consts, _GTAOAOTerm, _GTAOEdges, sampler_PointClamp, _GTAOOutputB, false);
+}
+
+[numthreads(XE_GTAO_NUMTHREADS_X, XE_GTAO_NUMTHREADS_Y, 1)]
+void CSDenoiseLastPass(uint2 dispatchThreadID : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 pixCoordBase = dispatchThreadID * uint2(2, 1);
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoordBase.x >= viewportSize.x || pixCoordBase.y >= viewportSize.y)
+        return;
+    XeGTAO_Denoise(pixCoordBase, consts, _GTAOAOTerm, _GTAOEdges, sampler_PointClamp, _GTAOOutputB, true);
+}
+
+[numthreads(8, 8, 1)]
+void CSDecode(uint2 pixCoord : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoord.x >= viewportSize.x || pixCoord.y >= viewportSize.y)
+        return;
+
+    uint packed = _GTAOAOTerm.Load(int3(pixCoord, 0)).x;
+    float ao = DecodeVisibility(packed) * _GTAOUpsampleParams.z;
+    _GTAOFloatOut[pixCoord] = ao;
+}
+
+[numthreads(8, 8, 1)]
+void CSDecodeBentNormal(uint2 pixCoord : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoord.x >= viewportSize.x || pixCoord.y >= viewportSize.y)
+        return;
+
+#if defined(_GTAO_BENT_NORMALS)
+    uint packed = _GTAOAOTerm.Load(int3(pixCoord, 0)).x;
+    lpfloat visibility;
+    lpfloat3 bentNormal;
+    XeGTAO_DecodeVisibilityBentNormal(packed, visibility, bentNormal);
+    float3 encoded = saturate((float3)(bentNormal * 0.5 + 0.5));
+    _GTAOBentNormalOut[pixCoord] = float4(encoded, visibility);
+#endif
+}
+
+[numthreads(8, 8, 1)]
+void CSTemporal(uint2 pixCoord : SV_DispatchThreadID)
+{
+    GTAOConstants consts = LoadGTAOConstants();
+    uint2 viewportSize = (uint2)consts.ViewportSize;
+    if (pixCoord.x >= viewportSize.x || pixCoord.y >= viewportSize.y)
+        return;
+
+    uint packed = _GTAOAOTerm.Load(int3(pixCoord, 0)).x;
+    float ao = DecodeVisibility(packed) * _GTAOUpsampleParams.z;
+
+    if (_GTAOTemporalParams.w > 0.5)
+    {
+        _GTAOHistoryOut[pixCoord] = ao;
+        return;
+    }
+
+    float2 aoSize = _GTAOResolutionParams.xy;
+    float2 uvFull = (float2(pixCoord) + 0.5) / aoSize;
+
+    float2 motion = _GTAOMotionVectors.SampleLevel(sampler_LinearClamp, uvFull, 0).xy;
+    float2 prevUV = uvFull - motion * _GTAOTemporalParams.z;
+
+    float history = ao;
+    if ((prevUV.x >= 0.0) && (prevUV.y >= 0.0) && (prevUV.x <= 1.0) && (prevUV.y <= 1.0))
+        history = _GTAOHistory.SampleLevel(sampler_LinearClamp, prevUV, 0);
+
+    float minAO = ao;
+    float maxAO = ao;
+    int2 size = consts.ViewportSize - 1;
+    int2 left = int2(max((int)pixCoord.x - 1, 0), pixCoord.y);
+    int2 right = int2(min((int)pixCoord.x + 1, size.x), pixCoord.y);
+    int2 up = int2(pixCoord.x, max((int)pixCoord.y - 1, 0));
+    int2 down = int2(pixCoord.x, min((int)pixCoord.y + 1, size.y));
+
+    uint pLeft = _GTAOAOTerm.Load(int3(left, 0)).x;
+    uint pRight = _GTAOAOTerm.Load(int3(right, 0)).x;
+    uint pUp = _GTAOAOTerm.Load(int3(up, 0)).x;
+    uint pDown = _GTAOAOTerm.Load(int3(down, 0)).x;
+
+    float aoLeft = DecodeVisibility(pLeft) * _GTAOUpsampleParams.z;
+    float aoRight = DecodeVisibility(pRight) * _GTAOUpsampleParams.z;
+    float aoUp = DecodeVisibility(pUp) * _GTAOUpsampleParams.z;
+    float aoDown = DecodeVisibility(pDown) * _GTAOUpsampleParams.z;
+
+    minAO = min(minAO, min(min(aoLeft, aoRight), min(aoUp, aoDown)));
+    maxAO = max(maxAO, max(max(aoLeft, aoRight), max(aoUp, aoDown)));
+
+    float range = maxAO - minAO;
+    minAO -= range * _GTAOTemporalParams.y;
+    maxAO += range * _GTAOTemporalParams.y;
+
+    history = clamp(history, minAO, maxAO);
+
+    float blended = lerp(ao, history, _GTAOTemporalParams.x);
+    _GTAOHistoryOut[pixCoord] = blended;
+}
+
+[numthreads(8, 8, 1)]
+void CSUpsampleBentNormal(uint2 pixCoord : SV_DispatchThreadID)
+{
+#if !defined(_GTAO_BENT_NORMALS)
+    return;
+#endif
+
+    float2 fullSize = _GTAOResolutionParams.zw;
+    if (pixCoord.x >= (uint)fullSize.x || pixCoord.y >= (uint)fullSize.y)
+        return;
+
+    GTAOConstants consts = LoadGTAOConstants();
+    float2 uvFull = (float2(pixCoord) + 0.5) / fullSize;
+
+    float depthFull = XeGTAO_ScreenSpaceToViewSpaceDepth(_GTAORawDepth.Load(int3(pixCoord, 0)).x, consts);
+
+    float2 halfSize = _GTAOResolutionParams.xy;
+    float2 halfPos = uvFull * halfSize - 0.5;
+    int2 baseCoord = int2(floor(halfPos));
+    float2 fracCoord = frac(halfPos);
+
+    int2 maxCoord = int2(halfSize) - 1;
+    int2 c00 = clamp(baseCoord, 0, maxCoord);
+    int2 c10 = clamp(baseCoord + int2(1, 0), 0, maxCoord);
+    int2 c01 = clamp(baseCoord + int2(0, 1), 0, maxCoord);
+    int2 c11 = clamp(baseCoord + int2(1, 1), 0, maxCoord);
+
+    float w00 = (1.0 - fracCoord.x) * (1.0 - fracCoord.y);
+    float w10 = fracCoord.x * (1.0 - fracCoord.y);
+    float w01 = (1.0 - fracCoord.x) * fracCoord.y;
+    float w11 = fracCoord.x * fracCoord.y;
+
+    float weight00 = w00;
+    float weight10 = w10;
+    float weight01 = w01;
+    float weight11 = w11;
+
+    if (_GTAOUpsampleParams.w > 0.5)
+    {
+        float depthThreshold = max(depthFull * _GTAOUpsampleParams.y, 1e-3);
+        float depth00 = _GTAOWorkingDepth.Load(int3(c00, 0));
+        float depth10 = _GTAOWorkingDepth.Load(int3(c10, 0));
+        float depth01 = _GTAOWorkingDepth.Load(int3(c01, 0));
+        float depth11 = _GTAOWorkingDepth.Load(int3(c11, 0));
+
+        weight00 *= saturate(1.0 - abs(depth00 - depthFull) / depthThreshold);
+        weight10 *= saturate(1.0 - abs(depth10 - depthFull) / depthThreshold);
+        weight01 *= saturate(1.0 - abs(depth01 - depthFull) / depthThreshold);
+        weight11 *= saturate(1.0 - abs(depth11 - depthFull) / depthThreshold);
+    }
+
+    float4 bn00 = _GTAOBentNormal.Load(int3(c00, 0));
+    float4 bn10 = _GTAOBentNormal.Load(int3(c10, 0));
+    float4 bn01 = _GTAOBentNormal.Load(int3(c01, 0));
+    float4 bn11 = _GTAOBentNormal.Load(int3(c11, 0));
+
+    float3 n00 = bn00.xyz * 2.0 - 1.0;
+    float3 n10 = bn10.xyz * 2.0 - 1.0;
+    float3 n01 = bn01.xyz * 2.0 - 1.0;
+    float3 n11 = bn11.xyz * 2.0 - 1.0;
+
+    float3 nSum = n00 * weight00 + n10 * weight10 + n01 * weight01 + n11 * weight11;
+    float aSum = bn00.w * weight00 + bn10.w * weight10 + bn01.w * weight01 + bn11.w * weight11;
+    float wsum = weight00 + weight10 + weight01 + weight11;
+
+    float3 nOut = (wsum > 1e-5) ? normalize(nSum / wsum) : n00;
+    float aOut = (wsum > 1e-5) ? (aSum / wsum) : bn00.w;
+    float3 encoded = saturate(nOut * 0.5 + 0.5);
+    _GTAOBentNormalFullOut[pixCoord] = float4(encoded, aOut);
+}
+
+[numthreads(8, 8, 1)]
+void CSUpsample(uint2 pixCoord : SV_DispatchThreadID)
+{
+    float2 fullSize = _GTAOResolutionParams.zw;
+    if (pixCoord.x >= (uint)fullSize.x || pixCoord.y >= (uint)fullSize.y)
+        return;
+
+    GTAOConstants consts = LoadGTAOConstants();
+    float2 uvFull = (float2(pixCoord) + 0.5) / fullSize;
+
+    float depthFull = XeGTAO_ScreenSpaceToViewSpaceDepth(_GTAORawDepth.Load(int3(pixCoord, 0)).x, consts);
+
+    float2 halfSize = _GTAOResolutionParams.xy;
+    float2 halfPos = uvFull * halfSize - 0.5;
+    int2 baseCoord = int2(floor(halfPos));
+    float2 fracCoord = frac(halfPos);
+
+    int2 maxCoord = int2(halfSize) - 1;
+    int2 c00 = clamp(baseCoord, 0, maxCoord);
+    int2 c10 = clamp(baseCoord + int2(1, 0), 0, maxCoord);
+    int2 c01 = clamp(baseCoord + int2(0, 1), 0, maxCoord);
+    int2 c11 = clamp(baseCoord + int2(1, 1), 0, maxCoord);
+
+    float w00 = (1.0 - fracCoord.x) * (1.0 - fracCoord.y);
+    float w10 = fracCoord.x * (1.0 - fracCoord.y);
+    float w01 = (1.0 - fracCoord.x) * fracCoord.y;
+    float w11 = fracCoord.x * fracCoord.y;
+
+    float ao00 = _GTAOInputFloat.Load(int3(c00, 0));
+    float ao10 = _GTAOInputFloat.Load(int3(c10, 0));
+    float ao01 = _GTAOInputFloat.Load(int3(c01, 0));
+    float ao11 = _GTAOInputFloat.Load(int3(c11, 0));
+
+    float weight00 = w00;
+    float weight10 = w10;
+    float weight01 = w01;
+    float weight11 = w11;
+
+    if (_GTAOUpsampleParams.w > 0.5)
+    {
+        float depthThreshold = max(depthFull * _GTAOUpsampleParams.y, 1e-3);
+        float depth00 = _GTAOWorkingDepth.Load(int3(c00, 0));
+        float depth10 = _GTAOWorkingDepth.Load(int3(c10, 0));
+        float depth01 = _GTAOWorkingDepth.Load(int3(c01, 0));
+        float depth11 = _GTAOWorkingDepth.Load(int3(c11, 0));
+
+        weight00 *= saturate(1.0 - abs(depth00 - depthFull) / depthThreshold);
+        weight10 *= saturate(1.0 - abs(depth10 - depthFull) / depthThreshold);
+        weight01 *= saturate(1.0 - abs(depth01 - depthFull) / depthThreshold);
+        weight11 *= saturate(1.0 - abs(depth11 - depthFull) / depthThreshold);
+    }
+
+    float sum = ao00 * weight00 + ao10 * weight10 + ao01 * weight01 + ao11 * weight11;
+    float wsum = weight00 + weight10 + weight01 + weight11;
+    float ao = (wsum > 1e-5) ? (sum / wsum) : ao00;
+
+    ao = saturate(ao * _GTAOUpsampleParams.x);
+    _GTAOOutput[pixCoord] = ao;
+}

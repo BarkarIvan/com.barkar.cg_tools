@@ -1,6 +1,10 @@
 #ifndef ARMLIT_FORWARD_PASS_INCLUDED
 #define ARMLIT_FORWARD_PASS_INCLUDED
 
+//#if defined(_SCREEN_SPACE_OCCLUSION)
+//#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ScreenSpaceOcclusion.hlsl"
+//#endif
+
 struct Attributes
 {
     float3 positionOS : POSITION;
@@ -169,10 +173,22 @@ half4 ARMLitFragment(Varyings IN) : SV_Target
 
     MixRealtimeAndBakedGI(mainLight, litData.N, indirectDiffuse);
     float2 normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(IN.positionCS);
-    half3 envPbr = GltfIBL(litData, surfaceData, 0, IN.positionWS, normalizedScreenSpaceUV, indirectDiffuse);
-    #if defined (_ADDITIONALMAP)
-    envPbr = lerp(envPbr, envPbr * surfaceData.occlusion, _OcclusionStrength);
+    half occlusion = 1.0h;
+    #if defined(_ADDITIONALMAP)
+    occlusion = lerp(1.0h, surfaceData.occlusion, _OcclusionStrength);
     #endif
+    #if defined(_SCREEN_SPACE_OCCLUSION)
+    half ssao = SampleAmbientOcclusion(normalizedScreenSpaceUV);
+    occlusion *= ssao;
+    #endif
+    CustomLitData iblData = litData;
+    #if defined(_GTAO_BENT_NORMALS)
+    float3 bentNormalVS = SAMPLE_TEXTURE2D(_GTAOBentNormalTexture, sampler_LinearClamp, normalizedScreenSpaceUV).xyz * 2.0 - 1.0;
+    float3 bentNormalWS = SafeNormalize(mul((float3x3)UNITY_MATRIX_I_V, bentNormalVS));
+    iblData.N = bentNormalWS;
+    #endif
+    half3 envPbr = GltfIBL(iblData, surfaceData, 0, IN.positionWS, normalizedScreenSpaceUV, indirectDiffuse);
+    envPbr *= occlusion;
     half3 directPbr = GltfDirectBRDF(litData, surfaceData, mainLight.direction, mainLight.color,
                                        mainLight.shadowAttenuation);
 
