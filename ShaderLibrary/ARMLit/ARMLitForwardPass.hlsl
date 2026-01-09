@@ -186,8 +186,6 @@ half4 ARMLitFragment(Varyings IN) : SV_Target
     #if defined(_GTAO_BENT_NORMALS)
     float3 bentNormalVS = SAMPLE_TEXTURE2D(_GTAOBentNormalTexture, sampler_LinearClamp, normalizedScreenSpaceUV).xyz * 2.0 - 1.0;
     float3 bentNormalWS = SafeNormalize(mul((float3x3)UNITY_MATRIX_I_V, bentNormalVS));
-    indirectDiffuseBent = SAMPLE_GI(IN.lightmapUV, IN.SH, bentNormalWS);
-    MixRealtimeAndBakedGI(mainLight, bentNormalWS, indirectDiffuseBent);
     specOcclusion = GetSpecularOcclusionFromBentAO(litData.V, bentNormalWS, litData.N, occlusion, surfaceData.roughness);
     #else
     specOcclusion = GetSpecularOcclusionFromAmbientOcclusion(saturate(dot(litData.N, litData.V)), occlusion, surfaceData.roughness);
