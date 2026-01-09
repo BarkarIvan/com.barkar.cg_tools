@@ -147,6 +147,85 @@ half3 GltfIBL(CustomLitData ld, CustomSurfaceData sd, float envRotation, float3 
     return color;
 }
 
+// Summary: glTF IBL with specular occlusion factor.
+// Args:
+// - specOcclusion: [0..1] factor applied to specular IBL terms.
+half3 GltfIBL(CustomLitData ld, CustomSurfaceData sd, float envRotation, float3 positionWS, float2 normalizedScreenSpaceUV, half3 indirectDiffuse, float specOcclusion)
+{
+    specOcclusion = saturate(specOcclusion);
+
+    float3 N = ld.N;
+    float3 V = ld.V;
+
+    float NoV = clamp(abs(dot(N, V)), 0.001, 1.0);
+    float pr  = saturate(sd.roughness);
+
+    float3 R = reflect(-V, N);
+
+    // Diffuse IBL (glTF split-sum)
+    float3 diffuseColor = sd.albedo * (1.0 - sd.metallic);
+    float3 diffuseTerm  = indirectDiffuse * diffuseColor;
+
+    // Specular IBL
+#if defined(_MATERIAL_ANISOTROPY)
+    float3 specularLD = Gltf_GetIBLRadianceAnisotropy(N, V, pr, sd.anisotropyStrength, sd.anisotropicB, positionWS, normalizedScreenSpaceUV);
+#else
+    float3 specularLD = Gltf_GlossyEnvironmentReflection(R, positionWS, pr, 1.0, normalizedScreenSpaceUV);
+#endif
+    specularLD *= specOcclusion;
+
+    float3 fresnelMetal = Gltf_GetIBLGGXFresnel(NoV, pr, sd.albedo, 1.0);
+    float3 fresnelDiel  = Gltf_GetIBLGGXFresnel(NoV, pr, sd.specularColor, sd.specularWeight);
+    float3 dielectricIBL = lerp(diffuseTerm, specularLD, fresnelDiel);
+    float3 metalIBL      = specularLD * fresnelMetal;
+
+#if defined(_MATERIAL_IRIDESCENCE)
+    float iridescenceFactor = sd.iridescenceFactor;
+    if (sd.iridescenceThickness <= 0.0)
+    {
+        iridescenceFactor = 0.0;
+    }
+    if (iridescenceFactor > 0.0)
+    {
+        float3 iridescenceFresnelDielectric = Gltf_EvalIridescence(1.0, sd.iridescenceIor, NoV, sd.iridescenceThickness, sd.specularColor);
+        float3 iridescenceFresnelMetal = Gltf_EvalIridescence(1.0, sd.iridescenceIor, NoV, sd.iridescenceThickness, sd.albedo);
+        float3 dielectricIri = Gltf_RgbMix(diffuseTerm, specularLD, iridescenceFresnelDielectric);
+        float3 metalIri = specularLD * iridescenceFresnelMetal;
+        dielectricIBL = lerp(dielectricIBL, dielectricIri, iridescenceFactor);
+        metalIBL = lerp(metalIBL, metalIri, iridescenceFactor);
+    }
+#endif
+
+    float3 color = lerp(dielectricIBL, metalIBL, sd.metallic);
+
+#if defined(_MATERIAL_SHEEN)
+    float maxSheen = Gltf_Max3(sd.sheenColor);
+    if (maxSheen > 0.0)
+    {
+        float albedoSheenScaling = 1.0 - maxSheen * Gltf_SampleSheenELUT(NoV, sd.sheenRoughness);
+        float sheenBrdf = Gltf_SampleCharlieLUT(NoV, sd.sheenRoughness);
+        float3 sheenSpecular = Gltf_GlossyEnvironmentReflection(R, positionWS, sd.sheenRoughness, 1.0, normalizedScreenSpaceUV) *
+            (sd.sheenColor * sheenBrdf);
+        sheenSpecular *= specOcclusion;
+        color = sheenSpecular + color * albedoSheenScaling;
+    }
+#endif
+
+#if defined(_MATERIAL_CLEARCOAT)
+    if (sd.clearcoatFactor > 0.0)
+    {
+        float3 Rc = reflect(-V, sd.clearcoatNormal);
+        float ccNoV = clamp(abs(dot(sd.clearcoatNormal, V)), 0.001, 1.0);
+        float3 clearcoatF = Gltf_F_Schlick(kDielectricSpec.rgb, float3(1.0, 1.0, 1.0), ccNoV);
+        half3 clearcoatSpecular = Gltf_GlossyEnvironmentReflection(Rc, positionWS, sd.clearcoatRoughness, 1.0, normalizedScreenSpaceUV);
+        clearcoatSpecular *= specOcclusion;
+        color = lerp(color, clearcoatSpecular, sd.clearcoatFactor * clearcoatF);
+    }
+#endif
+
+    return color;
+}
+
 // Summary: Direct lighting BRDF for one light (glTF spec).
 // Args:
 // - ld: lighting data (expects N, V).
