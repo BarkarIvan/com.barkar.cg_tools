@@ -215,6 +215,26 @@ Shader "CGTools/ARMLit"
             ENDHLSL
         }
 
+        Pass
+        {
+            Name "MotionVectors"
+            Tags
+            {
+                "LightMode"="MotionVectors"
+            }
+
+            ColorMask RG
+
+            HLSLPROGRAM
+            #pragma shader_feature_local _USEALPHACLIP
+            #pragma shader_feature_local_vertex _ADD_PRECOMPUTED_VELOCITY
+            #pragma multi_compile _ LOD_FADE_CROSSFADE
+
+            #include "Packages/com.barkar.cg_tools/ShaderLibrary/ARMLit/ARMLitInput.hlsl"
+            #include "Packages/com.barkar.cg_tools/ShaderLibrary/ARMLit/ARMLitMotionVectorsPass.hlsl"
+            ENDHLSL
+        }
+
 
         Pass
         {

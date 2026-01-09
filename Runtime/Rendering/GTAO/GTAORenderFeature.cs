@@ -83,8 +83,6 @@ public sealed class GTAORenderFeature : ScriptableRendererFeature
         [Tooltip("Depth mip sampling bias (quality vs stability).")]
         public float depthMipSamplingOffset = 3.3f;
 
-        [Tooltip("Enable GTAO in Scene View.")]
-        public bool allowSceneView = true;
     }
 
     [SerializeField] private GTAOSettings settings = new GTAOSettings();
@@ -116,8 +114,10 @@ public sealed class GTAORenderFeature : ScriptableRendererFeature
             return;
         }
 
-        if (!settings.allowSceneView && renderingData.cameraData.isSceneViewCamera)
+        if (renderingData.cameraData.isSceneViewCamera)
         {
+            Shader.DisableKeyword(ShaderKeywordStrings.ScreenSpaceOcclusion);
+            Shader.DisableKeyword(GTAOBentNormalKeyword);
             return;
         }
 
@@ -250,7 +250,7 @@ public sealed class GTAORenderFeature : ScriptableRendererFeature
                 return;
             }
 
-            if (!settings.allowSceneView && cameraData.isSceneViewCamera)
+            if (cameraData.isSceneViewCamera)
             {
                 return;
             }
