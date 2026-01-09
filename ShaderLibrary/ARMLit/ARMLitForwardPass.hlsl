@@ -173,14 +173,16 @@ half4 ARMLitFragment(Varyings IN) : SV_Target
     half3 indirectDiffuse = SAMPLE_GI(IN.lightmapUV, IN.SH, litData.N);
     MixRealtimeAndBakedGI(mainLight, litData.N, indirectDiffuse);
     float2 normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(IN.positionCS);
-    half occlusion = 1.0h;
+    half bakedAO = 1.0h;
     #if defined(_ADDITIONALMAP)
-    occlusion = lerp(1.0h, surfaceData.occlusion, _OcclusionStrength);
+    bakedAO = lerp(1.0h, surfaceData.occlusion, _OcclusionStrength);
     #endif
+    half screenAO = 1.0h;
     #if defined(_SCREEN_SPACE_OCCLUSION)
-    half ssao = SampleAmbientOcclusion(normalizedScreenSpaceUV);
-    occlusion *= ssao;
+    screenAO = SampleAmbientOcclusion(normalizedScreenSpaceUV);
     #endif
+    // Screen AO only deepens baked AO to avoid double-darkening.
+    half occlusion = min(bakedAO, screenAO);
     half3 indirectDiffuseBent = indirectDiffuse;
     float specOcclusion = 1.0;
     #if defined(_GTAO_BENT_NORMALS)
