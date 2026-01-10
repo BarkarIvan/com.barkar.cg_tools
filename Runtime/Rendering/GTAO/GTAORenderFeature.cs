@@ -6,6 +6,7 @@ using UnityEngine.Rendering.Universal;
 public sealed partial class GTAORenderFeature : ScriptableRendererFeature
 {
     const string GTAOBentNormalKeyword = "_GTAO_BENT_NORMALS";
+    const string GTAOOcclusionKeyword = "_GTAO_OCCLUSION";
 
     public enum Quality
     {
@@ -99,8 +100,8 @@ public sealed partial class GTAORenderFeature : ScriptableRendererFeature
 
         if (!settings.enabled || settings.computeShader == null)
         {
-            Shader.DisableKeyword(ShaderKeywordStrings.ScreenSpaceOcclusion);
             Shader.DisableKeyword(GTAOBentNormalKeyword);
+            Shader.DisableKeyword(GTAOOcclusionKeyword);
             return;
         }
 
@@ -111,14 +112,14 @@ public sealed partial class GTAORenderFeature : ScriptableRendererFeature
 
         if (renderingData.cameraData.isSceneViewCamera)
         {
-            Shader.DisableKeyword(ShaderKeywordStrings.ScreenSpaceOcclusion);
             Shader.DisableKeyword(GTAOBentNormalKeyword);
+            Shader.DisableKeyword(GTAOOcclusionKeyword);
             return;
         }
 
         pass.renderPassEvent = settings.renderPassEvent;
         renderer.EnqueuePass(pass);
-        Shader.EnableKeyword(ShaderKeywordStrings.ScreenSpaceOcclusion);
+        Shader.EnableKeyword(GTAOOcclusionKeyword);
         if (settings.bentNormals)
         {
             Shader.EnableKeyword(GTAOBentNormalKeyword);

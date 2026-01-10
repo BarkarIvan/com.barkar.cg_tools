@@ -44,8 +44,7 @@ public sealed partial class GTAORenderFeature
         static readonly int GTAOBentNormalId = Shader.PropertyToID("_GTAOBentNormal");
         static readonly int GTAOBentNormalFullOutId = Shader.PropertyToID("_GTAOBentNormalFullOut");
         static readonly int GTAOBentNormalTextureId = Shader.PropertyToID("_GTAOBentNormalTexture");
-
-        static readonly int ScreenSpaceOcclusionId = Shader.PropertyToID("_ScreenSpaceOcclusionTexture");
+        static readonly int GTAOOcclusionTextureId = Shader.PropertyToID("_GTAOOcclusionTexture");
 
         static readonly ProfilingSampler DownsampleSampler = new ProfilingSampler("GTAO Downsample Depth");
         static readonly ProfilingSampler PrefilterSampler = new ProfilingSampler("GTAO Prefilter Depth");

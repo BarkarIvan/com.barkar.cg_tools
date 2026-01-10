@@ -313,7 +313,7 @@ public sealed partial class GTAORenderFeature
                 builder.AllowPassCulling(false);
                 builder.SetRenderFunc((SetGlobalPassData data, ComputeGraphContext context) =>
                 {
-                    context.cmd.SetGlobalTexture(ScreenSpaceOcclusionId, data.output);
+                    context.cmd.SetGlobalTexture(GTAOOcclusionTextureId, data.output);
                     if (data.useBentNormals)
                     {
                         context.cmd.SetGlobalTexture(GTAOBentNormalTextureId, data.bentNormal);

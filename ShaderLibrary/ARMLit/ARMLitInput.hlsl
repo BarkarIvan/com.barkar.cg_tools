@@ -22,6 +22,10 @@ SAMPLER(sampler_EmissionMap);
 #if defined(_GTAO_BENT_NORMALS)
 TEXTURE2D(_GTAOBentNormalTexture);
 #endif
+#if defined(_GTAO_OCCLUSION)
+TEXTURE2D(_GTAOOcclusionTexture);
+SAMPLER(sampler_GTAOOcclusionTexture);
+#endif
 
 CBUFFER_START(UnityPerMaterial)
     half4 _BaseColor;

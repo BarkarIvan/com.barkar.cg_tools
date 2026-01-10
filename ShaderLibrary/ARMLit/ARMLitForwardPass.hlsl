@@ -178,8 +178,8 @@ half4 ARMLitFragment(Varyings IN) : SV_Target
     bakedAO = lerp(1.0h, surfaceData.occlusion, _OcclusionStrength);
     #endif
     half screenAO = 1.0h;
-    #if defined(_SCREEN_SPACE_OCCLUSION)
-    screenAO = SampleAmbientOcclusion(normalizedScreenSpaceUV);
+    #if defined(_GTAO_OCCLUSION)
+    screenAO = SAMPLE_TEXTURE2D(_GTAOOcclusionTexture, sampler_GTAOOcclusionTexture, normalizedScreenSpaceUV).r;
     #endif
     // Screen AO only deepens baked AO to avoid double-darkening.
     half occlusion = min(bakedAO, screenAO);
