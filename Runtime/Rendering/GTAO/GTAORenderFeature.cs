@@ -47,6 +47,8 @@ public sealed partial class GTAORenderFeature : ScriptableRendererFeature
         public Resolution resolution = Resolution.Half;
         [Tooltip("Output bent normals for IBL (extra cost).")]
         public bool bentNormals = false;
+        [Tooltip("Run compute passes on async compute queue when supported.")]
+        public bool asyncCompute = false;
 
         [Tooltip("World-space AO radius.")]
         [Min(0.001f)] public float radius = 0.5f;

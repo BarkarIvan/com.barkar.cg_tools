@@ -91,6 +91,11 @@ public sealed partial class GTAORenderFeature
             return desc;
         }
 
+        bool UseAsyncCompute()
+        {
+            return settings != null && settings.asyncCompute && SystemInfo.supportsAsyncCompute;
+        }
+
         GTAOShaderParams BuildShaderParams(UniversalCameraData cameraData, int aoWidth, int aoHeight, int fullWidth, int fullHeight, bool useTemporal, bool historyReset, bool reversedZ)
         {
             Matrix4x4 proj = GetGpuProjectionMatrix(cameraData);
