@@ -56,6 +56,7 @@ Varyings ARMLitVertex(Attributes IN)
     return OUT;
 }
 
+
 half4 ARMLitFragment(Varyings IN) : SV_Target
 {
     half4 result = 1;
@@ -69,6 +70,11 @@ half4 ARMLitFragment(Varyings IN) : SV_Target
     surfaceData.albedo = albedo.rgb * _Brightness;
     surfaceData.alpha = albedo.a;
     surfaceData.occlusion = 1.0;
+    
+    #if defined (_USEALPHACLIP)
+    clip(surfaceData.alpha - _Cutoff);
+    #endif
+    
 
     CustomLitData litData;
     litData.V = normalize(_WorldSpaceCameraPos - IN.positionWS);
@@ -115,7 +121,7 @@ half4 ARMLitFragment(Varyings IN) : SV_Target
 
     #endif
 
-    surfaceData.roughness = ARMLit_ApplyGeometricRoughness(surfaceData.roughness, geomNormalWS, _SpecularAAStrength);
+    surfaceData.roughness = ApplyGeometricRoughness(surfaceData.roughness, geomNormalWS, _SpecularAAStrength);
 
     surfaceData.specularWeight = 1.0;
     surfaceData.specularColor = kDielectricSpec.rgb;
@@ -168,10 +174,7 @@ half4 ARMLitFragment(Varyings IN) : SV_Target
                                 surfaceData.albedo,
                                 surfaceData.metallic);
 
-    #if defined (_USEALPHACLIP)
-    surfaceData.alpha = step(_Cutoff, surfaceData.alpha);
-    #endif
-
+    
     Light mainLight = GetMainLight(TransformWorldToShadowCoord(IN.positionWS));
 
     half3 indirectDiffuse = SAMPLE_GI(IN.lightmapUV, IN.SH, litData.N);

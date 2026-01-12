@@ -7,7 +7,7 @@
 // of the shading normal (includes normal map if present). The variance is added
 // in alpha space and converted back to perceptual roughness. strength scales the
 // effect (0 = no change).
-inline half ARMLit_ApplySpecularAA(half perceptualRoughness, float3 normalWS, half strength)
+inline half ApplySpecularAA(half perceptualRoughness, float3 normalWS, half strength)
 {
     normalWS = SafeNormalize(normalWS);
 
@@ -27,7 +27,7 @@ inline half ARMLit_ApplySpecularAA(half perceptualRoughness, float3 normalWS, ha
 // Valve (Alex Vlachos, GDC 2015 slide 43): geometric roughness from derivatives
 // of the interpolated geometric normal. This clamps roughness from below to
 // reduce sparkling on dense meshes even without normal maps.
-inline half ARMLit_ApplyGeometricRoughness(half perceptualRoughness, float3 geometricNormalWS, half strength)
+inline half ApplyGeometricRoughness(half perceptualRoughness, float3 geometricNormalWS, half strength)
 {
     float3 dndx = ddx(geometricNormalWS);
     float3 dndy = ddy(geometricNormalWS);
@@ -41,7 +41,7 @@ inline half ARMLit_ApplyGeometricRoughness(half perceptualRoughness, float3 geom
 // Valve (GDC 2015 slide 44): centroid interpolation for normals to reduce
 // silhouette sparkling. If the regular interpolated normal length is > 1.01,
 // prefer centroid normal. Call this before normalization.
-inline float3 ARMLit_SelectCentroidNormal(float3 normalWS, float3 centroidNormalWS)
+inline float3 SelectCentroidNormal(float3 normalWS, float3 centroidNormalWS)
 {
     if (dot(normalWS, normalWS) >= 1.01)
     {
