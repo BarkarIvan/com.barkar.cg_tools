@@ -17,6 +17,7 @@ Shader "CGTools/ARMLit"
 
         _Metallic("Metallic", Range(0.0, 1.0)) = 0.0
         _Roughness( "Roughness", Range(0,1)) = 0.0
+        _SpecularAAStrength("Specular AA Strength", Range(0,1)) = 0.0
 
         [Toggle(_MATERIAL_SPECULAR)] _UseSpecular ("Use Specular (glTF)", Float) = 0
         _SpecularFactor ("Specular Factor", Range(0,1)) = 1.0

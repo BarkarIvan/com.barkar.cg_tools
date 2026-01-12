@@ -5,6 +5,7 @@
 //#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ScreenSpaceOcclusion.hlsl"
 //#endif
 #include "Packages/com.unity.render-pipelines.core/ShaderLibrary/CommonLighting.hlsl"
+#include "Packages/com.barkar.cg_tools/ShaderLibrary/ARMLit/ARMLitSpecularAA.hlsl"
 
 struct Attributes
 {
@@ -29,6 +30,7 @@ struct Varyings
 };
 
 const half kMinPerceptualRoughness = 0.04h;
+
 
 Varyings ARMLitVertex(Attributes IN)
 {
@@ -112,6 +114,8 @@ half4 ARMLitFragment(Varyings IN) : SV_Target
     #endif
 
     #endif
+
+    surfaceData.roughness = ARMLit_ApplyGeometricRoughness(surfaceData.roughness, geomNormalWS, _SpecularAAStrength);
 
     surfaceData.specularWeight = 1.0;
     surfaceData.specularColor = kDielectricSpec.rgb;

@@ -37,6 +37,7 @@ public class ARMLitShaderEditor : BaseShaderGUI
         public MaterialProperty NormalMapScale;
         public MaterialProperty Metallic;
         public MaterialProperty Roughness;
+        public MaterialProperty SpecularAAStrength;
         public MaterialProperty UseSpecular;
         public MaterialProperty SpecularFactor;
         public MaterialProperty SpecularColor;
@@ -165,6 +166,7 @@ public class ARMLitShaderEditor : BaseShaderGUI
         EditorGUILayout.HelpBox("BRDF", MessageType.None);
         materialEditorRef.ShaderProperty(props.Metallic, "Metallic");
         materialEditorRef.ShaderProperty(props.Roughness, "Roughness");
+        materialEditorRef.ShaderProperty(props.SpecularAAStrength, "Specular AA Strength");
 
         EditorGUILayout.Separator();
         EditorGUILayout.Space(SectionSpacing);
@@ -341,6 +343,7 @@ public class ARMLitShaderEditor : BaseShaderGUI
             Cutoff = FindProperty("_Cutoff"),
             Metallic = FindProperty("_Metallic"),
             Roughness = FindProperty("_Roughness"),
+            SpecularAAStrength = FindProperty("_SpecularAAStrength"),
             UseSpecular = FindProperty("_UseSpecular"),
             SpecularFactor = FindProperty("_SpecularFactor"),
             SpecularColor = FindProperty("_SpecularColor"),

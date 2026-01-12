@@ -37,6 +37,7 @@ CBUFFER_START(UnityPerMaterial)
     half _Brightness;
     half _Metallic;
     half _Roughness;
+    half _SpecularAAStrength;
     half _OcclusionStrength;
     half _SpecularFactor;
     half _ClearcoatFactor;
