@@ -3,7 +3,7 @@ Shader "CGTools/ARMLit"
     Properties
     {
 
-        _BaseMap ("Albedo (RGB) Alpha (A)", 2D) = "white"{}
+        [MainTexture] _BaseMap ("Albedo (RGB) Alpha (A)", 2D) = "white"{}
         _BaseColor ("Color", Color) = (1,1,1,1)
 
         _AdditionalMap ("ARM Map (R=AO G=Roughness B=Metallic)", 2D) = "white"{}
