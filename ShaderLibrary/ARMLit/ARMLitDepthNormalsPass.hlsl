@@ -20,6 +20,8 @@ struct Varyings
     float3 tangentWS : TEXCOORD2;
     float3 bitangentWS : TEXCOORD3;
     #endif
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+    UNITY_VERTEX_OUTPUT_STEREO
 };
 
 float2 ARMLitEncodeNormalOct(float3 n)
@@ -31,8 +33,10 @@ float2 ARMLitEncodeNormalOct(float3 n)
 
 Varyings ARMLitDepthNormalsVertex(Attributes input)
 {
-    Varyings output;
+    Varyings output = (Varyings)0;
     UNITY_SETUP_INSTANCE_ID(input);
+    UNITY_TRANSFER_INSTANCE_ID(input, output);
+    UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
     VertexPositionInputs positionInputs = GetVertexPositionInputs(input.positionOS.xyz);
     output.positionCS = positionInputs.positionCS;
@@ -57,6 +61,9 @@ Varyings ARMLitDepthNormalsVertex(Attributes input)
 
 half4 ARMLitDepthNormalsFragment(Varyings input) : SV_TARGET
 {
+    UNITY_SETUP_INSTANCE_ID(input);
+    UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+
     ARMLit_AlphaClip(input.uv);
 
     float3 normalWS = SafeNormalize(input.normalWS);

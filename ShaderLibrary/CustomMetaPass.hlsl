@@ -26,12 +26,16 @@ struct Varyings
     float4 positionCS : POSITION;
     float2 testColor : COLOR;
     float2 uv : TEXCOORD0;
+    UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 
 
 Varyings MetaPassVertex(Attributes IN)
 {
     Varyings OUT;
+    UNITY_SETUP_INSTANCE_ID(IN);
+    UNITY_TRANSFER_INSTANCE_ID(IN, OUT);
+
     OUT.positionCS = UnityMetaVertexPosition(IN.positionOS.xyz, IN.uv1, IN.uv2);
     OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
     OUT.testColor = IN.uv2;
@@ -40,6 +44,8 @@ Varyings MetaPassVertex(Attributes IN)
 
 half4 MetaPassFragment(Varyings IN) : SV_TARGET
 {
+    UNITY_SETUP_INSTANCE_ID(IN);
+
     half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
     albedo *= _BaseColor;
     //albedo *= IN.color;

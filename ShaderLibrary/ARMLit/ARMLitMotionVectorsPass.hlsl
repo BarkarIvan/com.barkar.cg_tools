@@ -5,6 +5,6 @@
 #define _ALPHATEST_ON 1
 #endif
 
-#include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ObjectMotionVectors.hlsl"
+#include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/ObjectMotionVectors.hlsl"
 
 #endif

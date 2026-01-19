@@ -17,6 +17,7 @@ struct Varyings
 {
     float2 uv : TEXCOORD0;
     float4 positionCS : SV_POSITION;
+    UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 
 float4 ARMLitGetShadowPositionHClip(Attributes input)
@@ -46,6 +47,7 @@ Varyings ARMLitShadowCasterVertex(Attributes input)
 {
     Varyings output;
     UNITY_SETUP_INSTANCE_ID(input);
+    UNITY_TRANSFER_INSTANCE_ID(input, output);
 
     output.uv = TRANSFORM_TEX(input.uv, _BaseMap);
     output.positionCS = ARMLitGetShadowPositionHClip(input);
@@ -54,6 +56,8 @@ Varyings ARMLitShadowCasterVertex(Attributes input)
 
 half4 ARMLitShadowCasterFragment(Varyings input) : SV_TARGET
 {
+    UNITY_SETUP_INSTANCE_ID(input);
+
     ARMLit_AlphaClip(input.uv);
 
     #ifdef LOD_FADE_CROSSFADE

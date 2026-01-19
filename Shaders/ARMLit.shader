@@ -107,6 +107,10 @@ Shader "CGTools/ARMLit"
             #pragma multi_compile _ LIGHTMAP_ON
             #pragma multi_compile_fog
 
+            // GPU Instancing
+            #pragma multi_compile_instancing
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
+
             #pragma prefer_hlslcc gles
             #pragma exclude_renderers d3d11_9x
 
@@ -143,6 +147,10 @@ Shader "CGTools/ARMLit"
             #pragma shader_feature_fragment _USEALPHACLIP
             #pragma shader_feature_local _MQ_QUANTIZED
 
+            // GPU Instancing
+            #pragma multi_compile_instancing
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
+
             #pragma vertex ARMLitShadowCasterVertex
             #pragma fragment ARMLitShadowCasterFragment
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
@@ -174,6 +182,10 @@ Shader "CGTools/ARMLit"
             #pragma target 2.0
             #pragma shader_feature_local _USEALPHACLIP
 
+            // GPU Instancing
+            #pragma multi_compile_instancing
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
+
             #pragma vertex ARMLitDepthOnlyVertex
             #pragma fragment ARMLitDepthOnlyFragment
 
@@ -204,6 +216,10 @@ Shader "CGTools/ARMLit"
             #pragma shader_feature_local _NORMALMAP
             #pragma shader_feature_local _MQ_QUANTIZED
             #pragma shader_feature_local _USEALPHACLIP
+
+            // GPU Instancing
+            #pragma multi_compile_instancing
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/DOTS.hlsl"
 
             #pragma vertex ARMLitDepthNormalsVertex
             #pragma fragment ARMLitDepthNormalsFragment

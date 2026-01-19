@@ -12,12 +12,16 @@ struct Varyings
 {
     float2 uv : TEXCOORD0;
     float4 positionCS : SV_POSITION;
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+    UNITY_VERTEX_OUTPUT_STEREO
 };
 
 Varyings ARMLitDepthOnlyVertex(Attributes input)
 {
-    Varyings output;
+    Varyings output = (Varyings)0;
     UNITY_SETUP_INSTANCE_ID(input);
+    UNITY_TRANSFER_INSTANCE_ID(input, output);
+    UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(output);
 
     VertexPositionInputs positionInputs = GetVertexPositionInputs(input.positionOS.xyz);
     output.positionCS = positionInputs.positionCS;
@@ -27,6 +31,9 @@ Varyings ARMLitDepthOnlyVertex(Attributes input)
 
 half4 ARMLitDepthOnlyFragment(Varyings input) : SV_TARGET
 {
+    UNITY_SETUP_INSTANCE_ID(input);
+    UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
+
     ARMLit_AlphaClip(input.uv);
     return 0;
 }

@@ -15,6 +15,7 @@ struct Attributes
     float2 uv : TEXCOORD0;
     float2 lightmapUV : TEXCOORD1;
     half4 color : COLOR;
+    UNITY_VERTEX_INPUT_INSTANCE_ID
 };
 
 struct Varyings
@@ -27,6 +28,8 @@ struct Varyings
     DECLARE_LIGHTMAP_OR_SH(lightmapUV, SH, 5);
     float4 screenPos : TEXCOORD6;
     half4 color : COLOR;
+    UNITY_VERTEX_INPUT_INSTANCE_ID
+    UNITY_VERTEX_OUTPUT_STEREO
 };
 
 const half kMinPerceptualRoughness = 0.04h;
@@ -35,6 +38,10 @@ const half kMinPerceptualRoughness = 0.04h;
 Varyings ARMLitVertex(Attributes IN)
 {
     Varyings OUT;
+    UNITY_SETUP_INSTANCE_ID(IN);
+    UNITY_TRANSFER_INSTANCE_ID(IN, OUT);
+    UNITY_INITIALIZE_VERTEX_OUTPUT_STEREO(OUT);
+
     VertexPositionInputs positionInputs = GetVertexPositionInputs(IN.positionOS);
     OUT.positionWS.xyz = positionInputs.positionWS;
     OUT.positionCS = positionInputs.positionCS;
@@ -59,6 +66,9 @@ Varyings ARMLitVertex(Attributes IN)
 
 half4 ARMLitFragment(Varyings IN) : SV_Target
 {
+    UNITY_SETUP_INSTANCE_ID(IN);
+    UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(IN);
+
     half4 result = 1;
     half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv);
     albedo *= _BaseColor;
