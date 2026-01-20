@@ -21,7 +21,7 @@ TEXTURE2D(_GltfBrdfLut);
 // https://archive.org/details/lambertsphotome00lambgoog
 float3 Gltf_Diffuse_Lambert(float3 DiffuseColor)
 {
-    return DiffuseColor * INV_PI;
+    return DiffuseColor;// * INV_PI;
 }
 
 // Summary: Burley diffuse BRDF (Disney 2012).
@@ -40,7 +40,7 @@ float3 Gltf_Diffuse_Burley(float3 albedo, float pr, float NoV, float NoL, float 
     float FD90 = 0.5 + 2.0 * pr * LoH * LoH;
     float FdV  = 1.0 + (FD90 - 1.0) * Gltf_Pow5(1.0 - NoV);
     float FdL  = 1.0 + (FD90 - 1.0) * Gltf_Pow5(1.0 - NoL);
-    return albedo * (FdV * FdL) * INV_PI;
+    return albedo * (FdV * FdL);// * INV_PI;
 }
 
 // Summary: Sample BRDF integration LUT (split-sum).
